@@ -92,6 +92,19 @@ Das Dashboard soll beim Start nur die Daten laden, die fuer die erste Ansicht ge
 - Foto-Galerien laden zuerst nur Summary-Daten. Originalbilder werden erst beim Oeffnen eines Fotos nachgeladen.
 - Neue Fotos bekommen ein kleines Thumbnail. Alte Fotos ohne Thumbnail werden im Dashboard mit einem Platzhalter angezeigt und erst in der grossen Ansicht voll geladen.
 
+## Orte und Standortwechsel
+
+Orte werden in `state.json` unter `locations` gespeichert. Vorhandene Standorte aus Pflanzen und Ereignissen werden beim Laden automatisch in diese Liste uebernommen.
+
+Eine Pflanze kann ihren Standort ueber Ereignisse wechseln:
+
+- Beim Ereignis `Umtopfen` kann der Haken `Beim Umtopfen Standort wechseln` aktiviert werden. Der Haken macht nur das Zielfeld aktiv.
+- Das Browse-Dropdown oeffnet erst beim Klick/Fokus in das Zielfeld oder ueber den Pfeil.
+- Beim Klick in das Zielort-Feld oder auf den Pfeil erscheint die Liste bekannter Orte; beim Tippen wird sie gefiltert.
+- Wenn der eingegebene Zielort keinem vorhandenen Ort entspricht, wird er beim Speichern automatisch angelegt.
+- Das eigenstaendige Ereignis `Standortwechsel` macht denselben Wechsel ohne Umtopf-Eintrag.
+- Nach dem Speichern berechnet die App den aktuellen Pflanzenstandort aus dem neuesten Standortereignis.
+
 ## Wo werden die Daten gespeichert?
 
 Die Daten werden jetzt **außerhalb des Projektordners** gespeichert.

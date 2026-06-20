@@ -604,6 +604,10 @@ main {
   background: var(--green);
 }
 
+.event-location {
+  background: var(--blue);
+}
+
 .event-prune {
   background: var(--plum);
 }
@@ -941,7 +945,7 @@ main {
 }
 
 .filter-hidden {
-  display: none;
+  display: none !important;
 }
 
 label {
@@ -986,6 +990,8 @@ textarea {
   background: #eef1ed;
   display: grid;
   place-items: center;
+  overflow: hidden;
+  position: relative;
 }
 
 .variety-art svg {
@@ -997,12 +1003,25 @@ textarea {
   padding: 13px;
   display: grid;
   gap: 10px;
+  min-width: 0;
+}
+
+.variety-body > * {
+  min-width: 0;
+}
+
+.variety-card h4 {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  hyphens: auto;
+  line-height: 1.25;
 }
 
 .variety-body p {
   margin: 0;
   color: var(--muted);
   line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .variety-actions {
@@ -1444,6 +1463,136 @@ dialog::backdrop {
   padding: 6px 30px 6px 10px;
 }
 
+.location-combobox-label {
+  display: grid;
+  gap: 6px;
+}
+
+.location-combobox {
+  position: relative;
+  display: block;
+}
+
+.browse-dropdown-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  align-items: stretch;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  overflow: hidden;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.browse-dropdown-control:focus-within {
+  border-color: #b4ccb5;
+  box-shadow: 0 0 0 3px rgba(47, 111, 79, 0.12);
+}
+
+.location-combobox.open .browse-dropdown-control {
+  border-color: #93b395;
+}
+
+.location-combobox input {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.location-combobox input:focus {
+  outline: 0;
+}
+
+.browse-dropdown-trigger {
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: var(--surface-green);
+  color: var(--green-dark);
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+}
+
+.location-combobox-menu {
+  display: none;
+  position: static;
+  z-index: 1;
+  margin-top: 6px;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  box-shadow: var(--shadow);
+  padding: 8px;
+}
+
+.location-combobox-menu[hidden] {
+  display: none;
+}
+
+.location-combobox-menu.open {
+  display: grid;
+  gap: 5px;
+}
+
+.browse-dropdown-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 5px 8px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 2px;
+}
+
+.browse-dropdown-head strong {
+  color: var(--green-dark);
+}
+
+.location-option {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  padding: 9px 10px;
+  text-align: left;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.location-option-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: var(--surface-green);
+  color: var(--green-dark);
+  font-size: 0.8rem;
+}
+
+.location-option:hover,
+.location-option:focus {
+  background: var(--surface-green);
+}
+
+.new-location-option {
+  color: var(--green-dark);
+  font-weight: 700;
+}
+
+.location-option-empty {
+  color: var(--muted);
+  padding: 9px 10px;
+}
+
 .wide-dialog {
   width: min(940px, calc(100vw - 28px));
 }
@@ -1622,9 +1771,10 @@ dialog::backdrop {
 }
 
 .variety-art .plant-art-image {
-  width: 84%;
-  height: 84%;
-  max-height: 150px;
+  width: auto;
+  height: 90px;
+  max-width: calc(100% - 18px);
+  max-height: 90px;
 }
 
 .focus-header .plant-visual .plant-art-image {

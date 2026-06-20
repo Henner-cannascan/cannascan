@@ -7,7 +7,7 @@
  * Sortendatenbank, Lebenszyklen und History.
  *
  * Wichtige Datenfluesse:
- * - /api/state: Pflanzen, Ereignisse, Pflegeplan-Zuordnung und Historie
+ * - /api/state: Pflanzen, Ereignisse, Orte, Pflegeplan-Zuordnung und Historie
  * - /api/photos: komprimierte Foto- und Thumbnail-dataUrls
  * - /api/library: eigene Sorten, Pflanzenauswahl-Filter und Shoplinks
  *
@@ -41,6 +41,7 @@ const eventLabels = {
   repot: "Umtopfen",
   prune: "Schnitt",
   observe: "Beobachtung",
+  location: "Standortwechsel",
   photo: "Foto",
   stage: "Phase",
   harvest: "Ernte",
@@ -147,6 +148,7 @@ const el = {
   storageStatus: document.querySelector("#storageStatus"),
   plantDialog: document.querySelector("#plantDialog"),
   eventDialog: document.querySelector("#eventDialog"),
+  eventTypeSelect: document.querySelector("#eventTypeSelect"),
   varietyDialog: document.querySelector("#varietyDialog"),
   addPlantFilterDialog: document.querySelector("#addPlantFilterDialog"),
   plantForm: document.querySelector("#plantForm"),
@@ -159,6 +161,13 @@ const el = {
   duplicateCannabisFormSelect: document.querySelector("#duplicateCannabisFormSelect"),
   duplicateEventsList: document.querySelector("#duplicateEventsList"),
   addPlantFilterForm: document.querySelector("#addPlantFilterForm"),
+  eventLocationFields: document.querySelector("#eventLocationFields"),
+  eventLocationToggleRow: document.querySelector("#eventLocationToggleRow"),
+  eventChangeLocation: document.querySelector("#eventChangeLocation"),
+  eventCurrentLocationNote: document.querySelector("#eventCurrentLocationNote"),
+  eventLocationInput: document.querySelector("#eventLocationInput"),
+  eventLocationBrowse: document.querySelector("#eventLocationBrowse"),
+  eventLocationMenu: document.querySelector("#eventLocationMenu"),
   plantDialogTitle: document.querySelector("#plantDialogTitle"),
   plantSubmitButton: document.querySelector("#plantSubmitButton"),
   plantFormMode: document.querySelector("#plantFormMode"),
@@ -576,6 +585,98 @@ function addPlantVarieties() {
   return addPlantVarietiesCache;
 }
 
+function locationNames(extraValues = []) {
+  return normalizeLocationList([
+    ...(state.locations || []),
+    ...state.plants.map((plant) => plant.initialLocation),
+    ...state.plants.map((plant) => plant.location),
+    ...state.plants.flatMap((plant) => (plant.events || []).map((event) => event.location)),
+    ...extraValues,
+  ]);
+}
+
+function addLocationName(value) {
+  const location = normalizeLocationName(value);
+  if (!location) return "";
+  const existing = locationNames().find((item) => normalize(item) === normalize(location));
+  const nextLocation = existing || location;
+  state.locations = normalizeLocationList([...(state.locations || []), nextLocation]);
+  return nextLocation;
+}
+
+function eventLocationInputValue() {
+  return normalizeLocationName(el.eventLocationInput?.value);
+}
+
+function openEventLocationMenu() {
+  if (!el.eventLocationInput || el.eventLocationInput.disabled) return;
+  renderEventLocationMenu();
+  el.eventLocationInput.setAttribute("aria-expanded", "true");
+  if (el.eventLocationMenu) {
+    el.eventLocationMenu.hidden = false;
+    el.eventLocationMenu.classList.add("open");
+  }
+  el.eventLocationInput.closest(".browse-dropdown")?.classList.add("open");
+}
+
+function closeEventLocationMenu() {
+  el.eventLocationInput?.setAttribute("aria-expanded", "false");
+  if (el.eventLocationMenu) {
+    el.eventLocationMenu.classList.remove("open");
+    el.eventLocationMenu.hidden = true;
+  }
+  el.eventLocationInput?.closest(".browse-dropdown")?.classList.remove("open");
+}
+
+function renderEventLocationMenu() {
+  if (!el.eventLocationMenu || !el.eventLocationInput) return;
+
+  const query = normalize(el.eventLocationInput.value);
+  const value = eventLocationInputValue();
+  const locations = locationNames();
+  const matches = locations.filter((location) => !query || normalize(location).includes(query));
+  const exactMatch = locations.some((location) => normalize(location) === normalize(value));
+
+  el.eventLocationMenu.innerHTML = [
+    `<div class="browse-dropdown-head">
+      <span>${query ? "Passende Orte" : "Alle gespeicherten Orte"}</span>
+      <strong>${matches.length}</strong>
+    </div>`,
+    ...matches.map((location) => `
+      <button class="location-option" data-location-option="${escapeAttr(location)}" type="button" role="option">
+        <span class="location-option-icon" aria-hidden="true">⌖</span>
+        <span>${escapeHtml(location)}</span>
+      </button>
+    `),
+    value && !exactMatch ? `
+      <button class="location-option new-location-option" data-location-option="${escapeAttr(value)}" type="button" role="option">
+        <span class="location-option-icon" aria-hidden="true">＋</span>
+        <span>Neuen Ort anlegen: ${escapeHtml(value)}</span>
+      </button>
+    ` : "",
+    !matches.length && !value ? `<div class="location-option-empty">Noch keine Orte gespeichert.</div>` : "",
+  ].join("");
+
+  el.eventLocationMenu.querySelectorAll("[data-location-option]").forEach((button) => {
+    button.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      el.eventLocationInput.value = button.dataset.locationOption || "";
+      closeEventLocationMenu();
+    });
+  });
+}
+
+function hasLocationEvents(plant) {
+  return Array.isArray(plant?.events) && plant.events.some((event) => event.locationChange && event.location);
+}
+
+function recalculatePlantLocation(plant) {
+  const locationEvent = [...(plant?.events || [])]
+    .filter((event) => event.locationChange && event.location)
+    .sort((a, b) => parseDate(b.date) - parseDate(a.date))[0];
+  plant.location = normalizeLocationName(locationEvent?.location || plant.initialLocation || plant.location);
+}
+
 
 // Pflegeplaene sind Vorlagen. Aufgaben erscheinen erst, wenn eine Pflanze im
 // Dashboard eine Vorlage zugewiesen bekommt.
@@ -608,30 +709,66 @@ function normalizeCarePlanTemplate(plan) {
   };
 }
 
+function normalizeLocationName(value) {
+  return String(value || "").trim().replace(/\s+/g, " ");
+}
+
+function normalizeLocationList(values) {
+  const byKey = new Map();
+  (Array.isArray(values) ? values : [])
+    .map(normalizeLocationName)
+    .filter(Boolean)
+    .forEach((location) => {
+      const key = normalize(location);
+      if (!byKey.has(key)) byKey.set(key, location);
+    });
+
+  return [...byKey.values()]
+    .sort((a, b) => a.localeCompare(b, "de", { sensitivity: "base", numeric: true }));
+}
+
 function normalizeAppState(value) {
   const source = value && typeof value === "object" ? value : {};
   const plants = Array.isArray(source.plants) ? source.plants : structuredClone(seedData.plants);
   const carePlans = Array.isArray(source.carePlans)
     ? source.carePlans.map(normalizeCarePlanTemplate).filter(Boolean)
     : [];
+  const normalizedPlants = plants.map((plant) => {
+    const next = { ...plant };
+    next.location = normalizeLocationName(next.location);
+    next.initialLocation = normalizeLocationName(next.initialLocation || next.location);
+    if (!Array.isArray(next.events)) next.events = [];
+    next.events = next.events.map((event) => {
+      const entry = { ...event };
+      entry.location = normalizeLocationName(entry.location);
+      if (entry.type === "location" && entry.location) entry.locationChange = true;
+      if (entry.locationChange && !entry.location) delete entry.locationChange;
+      return entry;
+    });
+    if (next.carePlan && !next.carePlanOverrides) {
+      next.carePlanOverrides = normalizeCarePlanValues(next.carePlan);
+      delete next.carePlan;
+    }
+    if (next.carePlanOverrides) {
+      next.carePlanOverrides = normalizeCarePlanValues(next.carePlanOverrides);
+    }
+    if (next.carePlanId) next.carePlanId = String(next.carePlanId);
+    next.carePlanHistory = normalizeCarePlanHistory(next, carePlans);
+    recalculatePlantLocation(next);
+    return next;
+  });
+  const locations = normalizeLocationList([
+    ...(Array.isArray(source.locations) ? source.locations : []),
+    ...normalizedPlants.map((plant) => plant.initialLocation),
+    ...normalizedPlants.map((plant) => plant.location),
+    ...normalizedPlants.flatMap((plant) => plant.events.map((event) => event.location)),
+  ]);
 
   return {
     ...source,
-    plants: plants.map((plant) => {
-      const next = { ...plant };
-      if (!Array.isArray(next.events)) next.events = [];
-      if (next.carePlan && !next.carePlanOverrides) {
-        next.carePlanOverrides = normalizeCarePlanValues(next.carePlan);
-        delete next.carePlan;
-      }
-      if (next.carePlanOverrides) {
-        next.carePlanOverrides = normalizeCarePlanValues(next.carePlanOverrides);
-      }
-      if (next.carePlanId) next.carePlanId = String(next.carePlanId);
-      next.carePlanHistory = normalizeCarePlanHistory(next, carePlans);
-      return next;
-    }),
+    plants: normalizedPlants,
     carePlans,
+    locations,
   };
 }
 
@@ -727,6 +864,38 @@ function bindEvents() {
   el.historyYearFilter?.addEventListener("change", () => {
     activeHistoryYear = el.historyYearFilter.value || "all";
     renderHistory();
+  });
+  el.eventTypeSelect?.addEventListener("change", () => {
+    if (el.eventTypeSelect.value === "repot" && el.eventChangeLocation) {
+      el.eventChangeLocation.checked = false;
+    }
+    closeEventLocationMenu();
+    syncEventLocationControls();
+  });
+  el.eventChangeLocation?.addEventListener("change", () => {
+    syncEventLocationControls();
+  });
+  el.eventLocationInput?.addEventListener("pointerdown", openEventLocationMenu);
+  el.eventLocationInput?.addEventListener("focus", openEventLocationMenu);
+  el.eventLocationInput?.addEventListener("click", openEventLocationMenu);
+  el.eventLocationInput?.addEventListener("input", openEventLocationMenu);
+  el.eventLocationInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeEventLocationMenu();
+  });
+  el.eventLocationBrowse?.addEventListener("click", () => {
+    if (!el.eventLocationInput || el.eventLocationInput.disabled) return;
+    const isOpen = el.eventLocationInput.getAttribute("aria-expanded") === "true";
+    if (isOpen) {
+      closeEventLocationMenu();
+    } else {
+      el.eventLocationInput.focus();
+      openEventLocationMenu();
+    }
+  });
+  document.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element) || !event.target.closest("#eventLocationFields")) {
+      closeEventLocationMenu();
+    }
   });
 
   document.querySelector("#openAddPlant").addEventListener("click", () => openPlantDialog());
@@ -1972,7 +2141,8 @@ function renderTimeline(plant, variety) {
 
 function renderEventRow(event, plant) {
   const stage = event.stage ? getPhase(event.stage)?.label : "";
-  const note = [event.amount, event.note, stage ? `Phase: ${stage}` : ""].filter(Boolean).join(" · ");
+  const location = event.locationChange && event.location ? `Ort: ${event.location}` : "";
+  const note = [event.amount, location, event.note, stage ? `Phase: ${stage}` : ""].filter(Boolean).join(" · ");
   return `
     <article class="event-row">
       <span class="event-dot event-${escapeAttr(event.type)}" aria-hidden="true"></span>
@@ -2353,6 +2523,29 @@ function updateDuplicateCannabisFormOptions() {
     .join("");
 }
 
+function syncEventLocationControls() {
+  const type = String(el.eventTypeSelect?.value || "");
+  const isLocationEvent = type === "location";
+  const isRepot = type === "repot";
+  const enabled = isLocationEvent || (isRepot && Boolean(el.eventChangeLocation?.checked));
+
+  el.eventLocationFields?.classList.toggle("filter-hidden", !(isLocationEvent || isRepot));
+  el.eventLocationToggleRow?.classList.toggle("filter-hidden", !isRepot);
+  if (el.eventChangeLocation) {
+    el.eventChangeLocation.disabled = !isRepot;
+    if (isLocationEvent) el.eventChangeLocation.checked = true;
+  }
+  if (el.eventLocationInput) {
+    el.eventLocationInput.disabled = !enabled;
+    el.eventLocationInput.required = enabled;
+    if (!enabled) {
+      closeEventLocationMenu();
+    } else {
+      renderEventLocationMenu();
+    }
+  }
+}
+
 function openPlantDialog(varietyId) {
   fillVarietySelect("", varietyId);
   const varieties = addPlantVarieties();
@@ -2400,11 +2593,18 @@ function openPlantEditDialog(plantId) {
 function applyPlantFormDataToPlant(plant, form) {
   const variety = getVariety(form.get("varietyId"));
   const stage = String(form.get("stage") || "seed");
+  const formLocation = addLocationName(form.get("location"));
+  const hasLocationHistory = hasLocationEvents(plant);
   plant.nickname = String(form.get("nickname") || "").trim();
   plant.varietyId = String(form.get("varietyId") || "");
   plant.startedAt = String(form.get("startedAt") || todayISO());
   plant.stage = stage;
-  plant.location = String(form.get("location") || "").trim();
+  plant.initialLocation = formLocation || plant.initialLocation || "";
+  if (!hasLocationHistory) {
+    plant.location = formLocation;
+  } else {
+    recalculatePlantLocation(plant);
+  }
 
   if (variety?.category === "cannabis" && form.get("cannabisForm")) {
     plant.cannabisForm = String(form.get("cannabisForm"));
@@ -2627,7 +2827,7 @@ async function handleDuplicatePlantSubmit(event) {
   if (sourcePlant.carePlanOverrides) duplicate.carePlanOverrides = structuredClone(sourcePlant.carePlanOverrides);
 
   const sourceEvents = [...(sourcePlant.events || [])].sort((a, b) => parseDate(a.date) - parseDate(b.date));
-  sourceEvents.forEach((_, index) => {
+  sourceEvents.forEach((sourceEvent, index) => {
     if (!form.get(`keepEvent-${index}`)) return;
     const entry = {
       id: createId("event"),
@@ -2638,6 +2838,10 @@ async function handleDuplicatePlantSubmit(event) {
     };
     const stage = String(form.get(`eventStage-${index}`) || "");
     if (stage) entry.stage = stage;
+    if (sourceEvent.locationChange && sourceEvent.location) {
+      entry.locationChange = true;
+      entry.location = addLocationName(sourceEvent.location);
+    }
     duplicate.events.push(entry);
   });
 
@@ -2654,6 +2858,7 @@ async function handleDuplicatePlantSubmit(event) {
 
   duplicate.events.sort((a, b) => parseDate(a.date) - parseDate(b.date));
   recalculatePlantStage(duplicate);
+  recalculatePlantLocation(duplicate);
   if (form.get("stage")) duplicate.stage = String(form.get("stage"));
 
   state.plants.unshift(duplicate);
@@ -2671,11 +2876,22 @@ function openEventDialog(plantId, eventId = "") {
   el.eventForm.reset();
   el.eventForm.elements.plantId.value = plant.id;
   el.eventForm.elements.eventId.value = existingEvent?.id || "";
-  el.eventForm.elements.type.value = existingEvent?.type || "water";
+  if (el.eventTypeSelect) el.eventTypeSelect.value = existingEvent?.type || "water";
   el.eventForm.elements.date.value = existingEvent?.date || todayISO();
   el.eventForm.elements.amount.value = existingEvent?.amount || "";
   el.eventForm.elements.stage.value = existingEvent?.stage || "";
   el.eventForm.elements.note.value = existingEvent?.note || "";
+  if (el.eventChangeLocation) {
+    el.eventChangeLocation.checked = Boolean(existingEvent?.locationChange || existingEvent?.type === "location");
+  }
+  if (el.eventCurrentLocationNote) {
+    el.eventCurrentLocationNote.textContent = `Aktueller Ort: ${plant.location || "kein Ort gespeichert"}. Wähle hier nur den neuen Zielort.`;
+  }
+  if (el.eventLocationInput) {
+    el.eventLocationInput.value = normalizeLocationName(existingEvent?.location || "");
+  }
+  renderEventLocationMenu();
+  syncEventLocationControls();
   document.querySelector("#eventDialogTitle").textContent = existingEvent
     ? `${plant.nickname}: Ereignis bearbeiten`
     : `${plant.nickname}: Eintrag`;
@@ -2728,15 +2944,39 @@ async function handleEventSubmit(event) {
 
   const nextStage = form.get("stage");
   const eventId = String(form.get("eventId") || "");
+  const existingEvent = eventId ? plant.events.find((item) => item.id === eventId) : null;
+  const eventType = String(form.get("type") || "observe");
+  const wantsLocationChange = eventType === "location" || (eventType === "repot" && Boolean(form.get("changeLocation")));
+  const nextLocation = eventLocationInputValue();
+
+  if (wantsLocationChange && !nextLocation) {
+    window.alert("Bitte wähle einen neuen Zielort aus oder schreibe einen neuen Ort in das Feld.");
+    return;
+  }
+
+  if (
+    wantsLocationChange &&
+    normalize(nextLocation) === normalize(plant.location) &&
+    normalize(existingEvent?.location) !== normalize(nextLocation)
+  ) {
+    window.alert("Der Zielort ist bereits der aktuelle Ort der Pflanze. Bitte wähle oder erstelle einen anderen Ort.");
+    return;
+  }
+
   const entry = {
     id: eventId || createId("event"),
-    type: form.get("type"),
+    type: eventType,
     date: form.get("date"),
     amount: String(form.get("amount")).trim(),
     note: String(form.get("note")).trim(),
   };
 
   if (nextStage) entry.stage = nextStage;
+  if (wantsLocationChange) {
+    entry.locationChange = true;
+    entry.location = addLocationName(nextLocation);
+    if (!entry.amount && eventType === "location") entry.amount = `nach ${entry.location}`;
+  }
 
   if (eventId) {
     const index = plant.events.findIndex((item) => item.id === eventId);
@@ -2747,6 +2987,7 @@ async function handleEventSubmit(event) {
 
   plant.events.sort((a, b) => parseDate(a.date) - parseDate(b.date));
   recalculatePlantStage(plant);
+  recalculatePlantLocation(plant);
   await saveState();
   el.eventDialog.close();
   renderDashboard();
@@ -2765,6 +3006,7 @@ async function deleteEvent(plantId, eventId) {
 
   plant.events = plant.events.filter((item) => item.id !== eventId);
   recalculatePlantStage(plant);
+  recalculatePlantLocation(plant);
   await saveState();
   renderDashboard();
 }

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Plant Monitor</title>
-    <link rel="stylesheet" href="styles.css?v=8" />
+    <link rel="stylesheet" href="styles.css?v=11" />
   </head>
   <body>
     <!--
@@ -340,7 +340,7 @@
       </form>
     </dialog>
 
-    <!-- Dialog: Pflege-, Beobachtungs-, Foto- oder Phasenereignis bearbeiten. -->
+    <!-- Dialog: Pflege-, Standort-, Foto- oder Phasenereignis bearbeiten. -->
     <dialog id="eventDialog">
       <form method="dialog" class="dialog-card" id="eventForm">
         <div class="dialog-heading">
@@ -355,12 +355,13 @@
         <div class="form-grid">
           <label>
             Typ
-            <select name="type" required>
+            <select name="type" id="eventTypeSelect" required>
               <option value="water">Gießen</option>
               <option value="feed">Düngen</option>
               <option value="repot">Umtopfen</option>
               <option value="prune">Schnitt</option>
               <option value="observe">Beobachtung</option>
+              <option value="location">Standortwechsel</option>
               <option value="photo">Foto</option>
               <option value="harvest">Ernte</option>
               <option value="stage">Phase ändern</option>
@@ -388,6 +389,33 @@
               <option value="dead">Tot/abgeschlossen</option>
             </select>
           </label>
+          <fieldset class="dialog-fieldset full-span event-location-fieldset filter-hidden" id="eventLocationFields">
+            <legend>Standort</legend>
+            <label class="checkbox-row" id="eventLocationToggleRow">
+              <input type="checkbox" name="changeLocation" id="eventChangeLocation" />
+              <span>Beim Umtopfen Standort wechseln</span>
+            </label>
+            <p class="dialog-note" id="eventCurrentLocationNote"></p>
+            <label class="location-combobox-label">
+              Neuer Ort
+              <span class="location-combobox browse-dropdown">
+                <span class="browse-dropdown-control">
+                  <input
+                    name="location"
+                    id="eventLocationInput"
+                    placeholder="Ort suchen oder neu eingeben..."
+                    autocomplete="off"
+                    role="combobox"
+                    aria-expanded="false"
+                    aria-controls="eventLocationMenu"
+                  />
+                  <button class="browse-dropdown-trigger" id="eventLocationBrowse" type="button" aria-label="Orte durchsuchen">▾</button>
+                </span>
+                <div class="location-combobox-menu" id="eventLocationMenu" role="listbox" hidden></div>
+              </span>
+            </label>
+            <p class="dialog-note">Wähle einen bekannten Ort aus der Liste oder schreibe einen neuen Ort. Unbekannte Orte werden beim Speichern automatisch angelegt.</p>
+          </fieldset>
           <label class="full-span">
             Notiz
             <textarea name="note" rows="3" placeholder="Was ist passiert?"></textarea>
@@ -617,7 +645,7 @@
     </dialog>
 
     <!-- data.js liefert Seed-Daten, app.js rendert UI und spricht mit server.js. -->
-    <script src="data.js?v=6"></script>
-    <script src="app.js?v=10"></script>
+    <script src="data.js?v=7"></script>
+    <script src="app.js?v=11"></script>
   </body>
 </html>

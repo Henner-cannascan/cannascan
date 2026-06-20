@@ -6,7 +6,7 @@
  * Fotos und Sorten bereit und erzeugt kurze Pflanzenlinks sowie QR-Code-SVGs.
  *
  * Persistenz:
- * - state.json: Pflanzen, Ereignisse, Pflegeplaene und Shortcodes
+ * - state.json: Pflanzen, Ereignisse, Orte, Pflegeplaene und Shortcodes
  * - photos.json: komprimierte Fotos und Thumbnails
  * - library.json: eigene Sorten, Pflanzenauswahl-Filter und Shoplinks
  *
@@ -239,6 +239,24 @@ function nextShortCode(usedCodes) {
   }
 }
 
+function normalizeLocationName(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ');
+}
+
+function normalizeLocationList(values) {
+  const byKey = new Map();
+  (Array.isArray(values) ? values : [])
+    .map(normalizeLocationName)
+    .filter(Boolean)
+    .forEach((location) => {
+      const key = location.toLocaleLowerCase('de').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+      if (!byKey.has(key)) byKey.set(key, location);
+    });
+
+  return [...byKey.values()]
+    .sort((a, b) => a.localeCompare(b, 'de', { sensitivity: 'base', numeric: true }));
+}
+
 // Shortcodes sind dauerhaft in state.json gespeichert. QR-/NFC-Links bleiben
 // dadurch kurz und stabil, auch wenn sich Pflanzenname oder Sorte aendern.
 function normalizeState(state) {
@@ -247,6 +265,15 @@ function normalizeState(state) {
   let changed = normalized !== state;
 
   normalized.plants.forEach((plant) => {
+    plant.location = normalizeLocationName(plant.location);
+    plant.initialLocation = normalizeLocationName(plant.initialLocation || plant.location);
+    plant.events = Array.isArray(plant.events) ? plant.events : [];
+    plant.events.forEach((event) => {
+      event.location = normalizeLocationName(event.location);
+      if (event.type === 'location' && event.location) event.locationChange = true;
+      if (event.locationChange && !event.location) delete event.locationChange;
+    });
+
     const code = String(plant.shortCode || '').toLowerCase();
     if (isValidShortCode(code) && !usedCodes.has(code)) {
       plant.shortCode = code;
@@ -259,6 +286,17 @@ function normalizeState(state) {
     usedCodes.add(next);
     changed = true;
   });
+
+  const nextLocations = normalizeLocationList([
+    ...(Array.isArray(normalized.locations) ? normalized.locations : []),
+    ...normalized.plants.map((plant) => plant.initialLocation),
+    ...normalized.plants.map((plant) => plant.location),
+    ...normalized.plants.flatMap((plant) => plant.events.map((event) => event.location)),
+  ]);
+  if (JSON.stringify(normalized.locations || []) !== JSON.stringify(nextLocations)) {
+    normalized.locations = nextLocations;
+    changed = true;
+  }
 
   return { state: normalized, changed };
 }
@@ -323,7 +361,7 @@ function getStaticCacheControl(filePath) {
   }
 
   if (['.css', '.js'].includes(ext)) {
-    return 'public, max-age=3600, must-revalidate';
+    return 'no-store';
   }
 
   return 'no-store';
