@@ -4,12 +4,12 @@
  * Diese Datei ist die zentrale Browser-App ohne Build-Schritt oder Framework.
  * Sie liest die eingebaute Sortendatenbank aus data.js, laedt Nutzerdaten ueber
  * die Server-API und rendert daraus Dashboard, Aufgaben, Pflegeplaene,
- * Sortendatenbank, Lebenszyklen und History.
+ * Sortendatenbank, Lebenszyklen, History und Einstellungen.
  *
  * Wichtige Datenfluesse:
  * - /api/state: Pflanzen, Ereignisse, Orte, Pflegeplan-Zuordnung und Historie
  * - /api/photos: komprimierte Foto- und Thumbnail-dataUrls
- * - /api/library: eigene Sorten, Pflanzenauswahl-Filter und Shoplinks
+ * - /api/library: eigene Sorten, Systemfamilien, Pflanzenauswahl-Filter und Shoplinks
  *
  * Die Dashboard-Sortierung ist bewusst fachlich statt zeitlich:
  * Pflanzenart -> Familie/Hersteller -> Sorte -> Benennung.
@@ -94,7 +94,25 @@ const taskDefinitions = [
 
 // Globaler UI-Zustand. Da die App ohne Framework arbeitet, sind diese Werte die
 // gemeinsame Quelle fuer Navigation, Auswahl, Fotoanzeige und Serverstatus.
-let activeView = "dashboard";
+const viewRoutes = {
+  dashboard: "/dashboard",
+  tasks: "/tasks",
+  plans: "/plans",
+  database: "/database",
+  planner: "/planner",
+  history: "/history",
+  settings: "/settings",
+};
+
+function currentViewFromPage() {
+  const bodyView = document.body?.dataset.view;
+  if (viewRoutes[bodyView]) return bodyView;
+
+  const path = window.location.pathname.replace(/\/+$/, "") || "/";
+  return Object.entries(viewRoutes).find(([, route]) => route === path || `${route}.html` === path)?.[0] || "dashboard";
+}
+
+let activeView = currentViewFromPage();
 let activePlantFilter = "all";
 let activeHistoryYear = "all";
 let selectedPlantId = null;
@@ -145,6 +163,9 @@ const el = {
   historyYearFilter: document.querySelector("#historyYearFilter"),
   hiddenGrid: document.querySelector("#hiddenGrid"),
   hiddenCount: document.querySelector("#hiddenCount"),
+  systemFamilyForm: document.querySelector("#systemFamilyForm"),
+  systemFamilyOptions: document.querySelector("#systemFamilyOptions"),
+  systemFamilySummary: document.querySelector("#systemFamilySummary"),
   storageStatus: document.querySelector("#storageStatus"),
   plantDialog: document.querySelector("#plantDialog"),
   eventDialog: document.querySelector("#eventDialog"),
@@ -566,15 +587,32 @@ function compareVarieties(a, b) {
     });
 }
 
-function enabledAddPlantCategories() {
+function enabledSystemCategories() {
   return libraryState.addPlantFilters.enabledCategories?.length
     ? libraryState.addPlantFilters.enabledCategories
     : Object.keys(categoryLabels);
 }
 
+function isCategoryEnabled(category) {
+  return enabledSystemCategories().includes(category);
+}
+
+function systemVarieties() {
+  return allVarieties().filter((variety) => isCategoryEnabled(variety.category));
+}
+
+function plantMatchesEnabledFamily(plant) {
+  const variety = getVariety(plant?.varietyId);
+  return variety ? isCategoryEnabled(variety.category) : true;
+}
+
+function enabledAddPlantCategories() {
+  return enabledSystemCategories();
+}
+
 function isVarietyEnabledForAddPlant(variety) {
   if (!variety) return false;
-  if (!enabledAddPlantCategories().includes(variety.category)) return false;
+  if (!isCategoryEnabled(variety.category)) return false;
   return !libraryState.addPlantFilters.hiddenVarietyIds.includes(variety.id);
 }
 
@@ -836,14 +874,18 @@ async function init() {
   // Die grosse Sortenauswahl wird erst beim Oeffnen des Dialogs aufgebaut.
   // Das vermeidet hunderte versteckte <option>-Elemente beim Dashboard-Start.
   await loadStateFromServer();
-  applyPlantRouteFromUrl();
+  if (!applyPlantRouteFromUrl()) return;
   syncViewShell();
   render();
 }
 
 function bindEvents() {
   document.querySelectorAll(".nav-button").forEach((button) => {
-    button.addEventListener("click", () => switchView(button.dataset.view));
+    button.addEventListener("click", (event) => {
+      if (button.matches("a[href]")) return;
+      event.preventDefault();
+      switchView(button.dataset.view);
+    });
   });
 
   document.querySelectorAll("[data-plant-filter]").forEach((button) => {
@@ -856,11 +898,11 @@ function bindEvents() {
     });
   });
 
-  el.globalSearch.addEventListener("input", render);
-  el.categoryFilter.addEventListener("change", renderDatabase);
-  el.sizeFilter.addEventListener("change", renderDatabase);
-  el.difficultyFilter.addEventListener("change", renderDatabase);
-  el.cannabisFormFilter.addEventListener("change", renderDatabase);
+  el.globalSearch?.addEventListener("input", render);
+  el.categoryFilter?.addEventListener("change", renderDatabase);
+  el.sizeFilter?.addEventListener("change", renderDatabase);
+  el.difficultyFilter?.addEventListener("change", renderDatabase);
+  el.cannabisFormFilter?.addEventListener("change", renderDatabase);
   el.historyYearFilter?.addEventListener("change", () => {
     activeHistoryYear = el.historyYearFilter.value || "all";
     renderHistory();
@@ -898,12 +940,12 @@ function bindEvents() {
     }
   });
 
-  document.querySelector("#openAddPlant").addEventListener("click", () => openPlantDialog());
+  document.querySelector("#openAddPlant")?.addEventListener("click", () => openPlantDialog());
   el.openPlansView?.addEventListener("click", () => switchView("plans"));
-  document.querySelector("#closePlantDialog").addEventListener("click", () => el.plantDialog.close());
-  document.querySelector("#cancelPlant").addEventListener("click", () => el.plantDialog.close());
-  document.querySelector("#closeEventDialog").addEventListener("click", () => el.eventDialog.close());
-  document.querySelector("#cancelEvent").addEventListener("click", () => el.eventDialog.close());
+  document.querySelector("#closePlantDialog")?.addEventListener("click", () => el.plantDialog?.close());
+  document.querySelector("#cancelPlant")?.addEventListener("click", () => el.plantDialog?.close());
+  document.querySelector("#closeEventDialog")?.addEventListener("click", () => el.eventDialog?.close());
+  document.querySelector("#cancelEvent")?.addEventListener("click", () => el.eventDialog?.close());
 
   document.querySelector("#closePhotoViewer")?.addEventListener("click", closePhotoViewer);
   document.querySelector("#photoViewerDialog")?.addEventListener("click", (event) => {
@@ -915,21 +957,21 @@ function bindEvents() {
   });
   el.openAddVariety?.addEventListener("click", openVarietyDialog);
   el.openAddPlantFilter?.addEventListener("click", openAddPlantFilterDialog);
-  document.querySelector("#closeVarietyDialog")?.addEventListener("click", () => el.varietyDialog.close());
-  document.querySelector("#cancelVariety")?.addEventListener("click", () => el.varietyDialog.close());
-  document.querySelector("#closeAddPlantFilterDialog")?.addEventListener("click", () => el.addPlantFilterDialog.close());
-  document.querySelector("#cancelAddPlantFilter")?.addEventListener("click", () => el.addPlantFilterDialog.close());
-  document.querySelector("#closeDuplicatePlantDialog")?.addEventListener("click", () => el.duplicatePlantDialog.close());
-  document.querySelector("#cancelDuplicatePlant")?.addEventListener("click", () => el.duplicatePlantDialog.close());
+  document.querySelector("#closeVarietyDialog")?.addEventListener("click", () => el.varietyDialog?.close());
+  document.querySelector("#cancelVariety")?.addEventListener("click", () => el.varietyDialog?.close());
+  document.querySelector("#closeAddPlantFilterDialog")?.addEventListener("click", () => el.addPlantFilterDialog?.close());
+  document.querySelector("#cancelAddPlantFilter")?.addEventListener("click", () => el.addPlantFilterDialog?.close());
+  document.querySelector("#closeDuplicatePlantDialog")?.addEventListener("click", () => el.duplicatePlantDialog?.close());
+  document.querySelector("#cancelDuplicatePlant")?.addEventListener("click", () => el.duplicatePlantDialog?.close());
   document.querySelector("#selectAllVarieties")?.addEventListener("click", () => setVarietyFilterCheckboxes(true));
   document.querySelector("#clearAllVarieties")?.addEventListener("click", () => setVarietyFilterCheckboxes(false));
 
-  el.varietySelect.addEventListener("change", updatePlantCannabisFormOptions);
+  el.varietySelect?.addEventListener("change", updatePlantCannabisFormOptions);
   el.varietySearch?.addEventListener("input", () => fillVarietySelect(el.varietySearch.value, el.varietySelect.value, el.plantFormMode?.value !== "edit"));
   el.duplicateVarietySelect?.addEventListener("change", updateDuplicateCannabisFormOptions);
   el.duplicateVarietySearch?.addEventListener("input", () => fillDuplicateVarietySelect(el.duplicateVarietySearch.value, el.duplicateVarietySelect.value));
-  el.plantForm.addEventListener("submit", handlePlantSubmit);
-  el.eventForm.addEventListener("submit", handleEventSubmit);
+  el.plantForm?.addEventListener("submit", handlePlantSubmit);
+  el.eventForm?.addEventListener("submit", handleEventSubmit);
   el.duplicatePlantForm?.addEventListener("submit", handleDuplicatePlantSubmit);
   el.varietyForm?.addEventListener("submit", handleVarietySubmit);
   el.addPlantFilterForm?.addEventListener("submit", handleAddPlantFilterSubmit);
@@ -940,9 +982,11 @@ function bindEvents() {
   document.addEventListener("click", handleTaskAction);
   el.carePlanTemplateForm?.addEventListener("submit", handleCarePlanTemplateSubmit);
   el.carePlanTemplateCancel?.addEventListener("click", resetCarePlanTemplateForm);
+  el.systemFamilyForm?.addEventListener("submit", handleSystemFamilySubmit);
 }
 
 function syncViewShell() {
+  document.body.dataset.view = activeView;
   document.querySelectorAll(".nav-button").forEach((button) => {
     button.classList.toggle("active", button.dataset.view === activeView);
   });
@@ -952,8 +996,29 @@ function syncViewShell() {
 }
 
 function switchView(view) {
+  if (!viewRoutes[view]) return;
+  if (view !== activeView) {
+    window.location.href = viewRoutes[view];
+    return;
+  }
   activeView = view;
   syncViewShell();
+  render();
+}
+
+function routeForPlant(plant) {
+  const targetView = plant?.stage === "dead" ? "history" : "dashboard";
+  return `${viewRoutes[targetView]}?plant=${encodeURIComponent(plant.id)}`;
+}
+
+function navigateToPlant(plant) {
+  if (!plant || !plantMatchesEnabledFamily(plant)) return;
+  const targetView = plant.stage === "dead" ? "history" : "dashboard";
+  selectedPlantId = plant.id;
+  if (activeView !== targetView) {
+    window.location.href = routeForPlant(plant);
+    return;
+  }
   render();
 }
 
@@ -972,8 +1037,9 @@ function render() {
     database: "Sortendatenbank",
     planner: "Lebenszyklen",
     history: "History",
+    settings: "Einstellungen",
   };
-  el.viewTitle.textContent = titles[activeView];
+  if (el.viewTitle) el.viewTitle.textContent = titles[activeView];
 
   if (activeView === "dashboard") renderDashboard();
   if (activeView === "tasks") renderTasks();
@@ -981,24 +1047,98 @@ function render() {
   if (activeView === "database") renderDatabase();
   if (activeView === "planner") renderPlanner();
   if (activeView === "history") renderHistory();
+  if (activeView === "settings") renderSettings();
+}
+
+function renderSettings() {
+  if (!el.systemFamilyOptions) return;
+
+  const enabledCategories = new Set(enabledSystemCategories());
+  const categoryCounts = countBy(allVarieties().map((variety) => variety.category));
+  const plantCounts = countBy(
+    state.plants.map((plant) => getVariety(plant.varietyId)?.category).filter(Boolean),
+  );
+
+  el.systemFamilyOptions.innerHTML = Object.entries(categoryLabels)
+    .map(([category, label]) => {
+      const enabled = enabledCategories.has(category);
+      const varietyCount = categoryCounts[category] ?? 0;
+      const plantCount = plantCounts[category] ?? 0;
+      return `
+        <label class="settings-family-card ${enabled ? "active" : ""}">
+          <input type="checkbox" name="enabledCategory" value="${escapeAttr(category)}" ${enabled ? "checked" : ""} />
+          <span>
+            <strong>${escapeHtml(label)}</strong>
+            <small>${escapeHtml(varietyCount)} Sorte${varietyCount === 1 ? "" : "n"} · ${escapeHtml(plantCount)} Pflanze${plantCount === 1 ? "" : "n"}</small>
+          </span>
+        </label>
+      `;
+    })
+    .join("");
+
+  el.systemFamilyOptions.querySelectorAll('input[name="enabledCategory"]').forEach((input) => {
+    input.addEventListener("change", () => {
+      input.closest(".settings-family-card")?.classList.toggle("active", input.checked);
+      updateSystemFamilySummary();
+    });
+  });
+
+  updateSystemFamilySummary();
+}
+
+function updateSystemFamilySummary() {
+  if (!el.systemFamilySummary) return;
+  const checked = el.systemFamilyOptions?.querySelectorAll('input[name="enabledCategory"]:checked').length
+    ?? enabledSystemCategories().length;
+  el.systemFamilySummary.textContent = `${checked} von ${Object.keys(categoryLabels).length} aktiv`;
+}
+
+async function handleSystemFamilySubmit(event) {
+  event.preventDefault();
+  const form = new FormData(el.systemFamilyForm);
+  const enabledCategories = form.getAll("enabledCategory").map(String).filter((category) => categoryLabels[category]);
+
+  if (!enabledCategories.length) {
+    window.alert("Bitte wähle mindestens eine Pflanzenfamilie aus.");
+    return;
+  }
+
+  libraryState.addPlantFilters = {
+    ...libraryState.addPlantFilters,
+    enabledCategories,
+  };
+  if (activePlantFilter !== "all" && !enabledCategories.includes(activePlantFilter)) {
+    activePlantFilter = "all";
+  }
+
+  await saveLibrary();
+  render();
+  updateStorageStatus("Einstellungen gespeichert", "ok");
 }
 
 
 function applyPlantRouteFromUrl() {
   const requestedPlantId = new URLSearchParams(window.location.search).get("plant");
   const requestedPlant = requestedPlantId
-    ? state.plants.find((plant) => plant.id === requestedPlantId && !isPlantHidden(plant))
+    ? state.plants.find((plant) => plant.id === requestedPlantId && !isPlantHidden(plant) && plantMatchesEnabledFamily(plant))
     : null;
 
   if (requestedPlant) {
+    const targetView = requestedPlant.stage === "dead" ? "history" : "dashboard";
     selectedPlantId = requestedPlant.id;
-    activeView = requestedPlant.stage === "dead" ? "history" : "dashboard";
+    if (activeView !== targetView) {
+      window.location.replace(`${viewRoutes[targetView]}?plant=${encodeURIComponent(requestedPlant.id)}`);
+      return false;
+    }
+    activeView = targetView;
     initialPlantRouteApplied = true;
-    return;
+    return true;
   }
 
-  selectedPlantId = activeVisiblePlants()[0]?.id ?? null;
-  activeView = "dashboard";
+  if (activeView === "dashboard") {
+    selectedPlantId = activeVisiblePlants()[0]?.id ?? null;
+  }
+  return true;
 }
 
 function plantDeepLink(plant) {
@@ -1006,7 +1146,8 @@ function plantDeepLink(plant) {
   if (plant.shortCode) {
     return `${base}/p/${encodeURIComponent(plant.shortCode)}`;
   }
-  return `${base}${window.location.pathname}?plant=${encodeURIComponent(plant.id)}`;
+  const route = plant?.stage === "dead" ? viewRoutes.history : viewRoutes.dashboard;
+  return `${base}${route}?plant=${encodeURIComponent(plant.id)}`;
 }
 
 function plantQrSrc(plant) {
@@ -1085,7 +1226,7 @@ function isPlantHidden(plant) {
 }
 
 function visiblePlants() {
-  return state.plants.filter((plant) => !isPlantHidden(plant));
+  return state.plants.filter((plant) => !isPlantHidden(plant) && plantMatchesEnabledFamily(plant));
 }
 
 function activeVisiblePlants() {
@@ -1093,7 +1234,7 @@ function activeVisiblePlants() {
 }
 
 function hiddenPlants() {
-  return state.plants.filter(isPlantHidden);
+  return state.plants.filter((plant) => isPlantHidden(plant) && plantMatchesEnabledFamily(plant));
 }
 
 function nextVisibleActivePlantId(exceptPlantId) {
@@ -1152,11 +1293,7 @@ async function restorePlant(plantId) {
   selectedPlantId = plant.id;
 
   await saveState();
-  if (plant.stage === "dead") {
-    switchView("history");
-  } else {
-    switchView("dashboard");
-  }
+  navigateToPlant(plant);
 }
 
 
@@ -1747,9 +1884,9 @@ async function handleTaskAction(event) {
   event.stopPropagation();
 
   if (openButton) {
-    selectedPlantId = openButton.dataset.openTaskPlant;
-    switchView("dashboard");
-    scrollFocusPanelIntoViewOnMobile();
+    const plant = state.plants.find((item) => item.id === openButton.dataset.openTaskPlant);
+    navigateToPlant(plant);
+    if (activeView === "dashboard") scrollFocusPanelIntoViewOnMobile();
     return;
   }
 
@@ -1824,12 +1961,11 @@ function comparePlantsByDashboardOrder(a, b) {
 
 function renderDashboard() {
   renderStats();
+  syncPlantFilterControls();
 
   const query = getSearchQuery();
-  const plants = state.plants
+  const plants = activeVisiblePlants()
     .filter((plant) => {
-      if (isPlantHidden(plant)) return false;
-      if (plant.stage === "dead") return false;
       const variety = getVariety(plant.varietyId);
       if (activePlantFilter !== "all" && variety?.category !== activePlantFilter) return false;
       return matchesSearch([plant.nickname, plant.location, varietyText(variety)], query);
@@ -1869,7 +2005,7 @@ function renderStats() {
 
   el.statsGrid.innerHTML = [
     statCard("Aktive Pflanzen", activePlants.length, "im Dashboard"),
-    statCard("Sorten", allVarieties().length, "in der Datenbank"),
+    statCard("Sorten", systemVarieties().length, "in der Datenbank"),
     statCard("Gießvorgänge", waterCount, "in allen Historien"),
     statCard("Fällige Aufgaben", dueTaskCount, dueTaskCount ? "heute/überfällig" : "alles im Plan"),
   ].join("");
@@ -1891,6 +2027,21 @@ function renderStats() {
     "beforeend",
     `<div class="mini-visual" aria-hidden="true">${visual}</div>`,
   );
+}
+
+function syncPlantFilterControls() {
+  const enabledCategories = new Set(enabledSystemCategories());
+  if (activePlantFilter !== "all" && !enabledCategories.has(activePlantFilter)) {
+    activePlantFilter = "all";
+  }
+
+  document.querySelectorAll("[data-plant-filter]").forEach((button) => {
+    const category = button.dataset.plantFilter;
+    const visible = category === "all" || enabledCategories.has(category);
+    button.classList.toggle("filter-hidden", !visible);
+    button.disabled = !visible;
+    button.classList.toggle("active", category === activePlantFilter);
+  });
 }
 
 function statCard(label, value, detail) {
@@ -1935,7 +2086,11 @@ function renderPlantCard(plant) {
 }
 
 function renderFocusPanel() {
-  const plant = state.plants.find((item) => item.id === selectedPlantId && !isPlantHidden(item));
+  const plant = state.plants.find((item) => (
+    item.id === selectedPlantId &&
+    !isPlantHidden(item) &&
+    plantMatchesEnabledFamily(item)
+  ));
   if (!plant) {
     el.focusPanel.innerHTML = `<div class="focus-empty">Lege eine Pflanze an, um den Lebenszyklus zu sehen.</div>`;
     return;
@@ -2224,12 +2379,7 @@ function syncHistoryYearFilter(plants) {
 
 function renderHistory() {
   const query = getSearchQuery();
-  const completedPlants = state.plants
-    .filter((plant) => {
-      if (isPlantHidden(plant)) return false;
-      if (plant.stage !== "dead") return false;
-      return true;
-    });
+  const completedPlants = visiblePlants().filter((plant) => plant.stage === "dead");
 
   syncHistoryYearFilter(completedPlants);
 
@@ -2368,14 +2518,16 @@ function renderHiddenPlantCard(plant) {
 
 
 function renderDatabase() {
+  if (!el.varietyGrid || !el.categoryFilter) return;
+  syncDatabaseCategoryOptions();
   syncCannabisFilter();
   const query = getSearchQuery();
   const category = el.categoryFilter.value;
   const size = el.sizeFilter.value;
   const difficulty = el.difficultyFilter.value;
-  const cannabisForm = el.cannabisFormFilter.value;
+  const cannabisForm = el.cannabisFormFilter?.value || "all";
 
-  const varieties = allVarieties().filter((variety) => {
+  const varieties = systemVarieties().filter((variety) => {
     if (category !== "all" && variety.category !== category) return false;
     if (size !== "all" && variety.sizeClass !== size) return false;
     if (difficulty !== "all" && variety.difficulty !== difficulty) return false;
@@ -2456,7 +2608,7 @@ function renderPlanner() {
 
 function fillVarietySelect(searchQuery = "", preferredId = el.varietySelect?.value, onlyEnabled = true) {
   const query = normalize(searchQuery);
-  const sourceVarieties = onlyEnabled ? addPlantVarieties() : allVarieties();
+  const sourceVarieties = onlyEnabled ? addPlantVarieties() : systemVarieties();
   const varieties = sourceVarieties.filter((variety) => matchesSearch([variety.name, variety.breeder, categoryLabels[variety.category], varietyText(variety)], query));
   if (!varieties.length) {
     el.varietySelect.innerHTML = `<option value="">Keine Sorte gefunden</option>`;
@@ -2496,7 +2648,7 @@ function updatePlantCannabisFormOptions() {
 function fillDuplicateVarietySelect(searchQuery = "", preferredId = el.duplicateVarietySelect?.value) {
   if (!el.duplicateVarietySelect) return;
   const query = normalize(searchQuery);
-  const varieties = allVarieties().filter((variety) => matchesSearch([variety.name, variety.breeder, categoryLabels[variety.category], varietyText(variety)], query));
+  const varieties = systemVarieties().filter((variety) => matchesSearch([variety.name, variety.breeder, categoryLabels[variety.category], varietyText(variety)], query));
 
   el.duplicateVarietySelect.innerHTML = varieties.length
     ? varieties.map((variety) => {
@@ -2614,15 +2766,37 @@ function applyPlantFormDataToPlant(plant, form) {
 }
 
 function openVarietyDialog() {
+  const enabledCategories = enabledSystemCategories();
+  if (!enabledCategories.length) {
+    window.alert("Bitte aktiviere zuerst mindestens eine Pflanzenfamilie in den Einstellungen.");
+    return;
+  }
+
   el.varietyForm.reset();
-  el.varietyForm.elements.category.value = "cannabis";
+  syncVarietyFormCategoryOptions(enabledCategories.includes("cannabis") ? "cannabis" : enabledCategories[0]);
   el.varietyForm.elements.difficulty.value = "Mittel";
   el.varietyForm.elements.sizeClass.value = "medium";
   el.varietyForm.elements.lifecycleDays.value = 150;
   el.varietyForm.elements.heightMin.value = 70;
   el.varietyForm.elements.heightMax.value = 160;
-  syncVarietyFormCannabisFields();
   el.varietyDialog.showModal();
+}
+
+function syncVarietyFormCategoryOptions(preferredCategory = "") {
+  const select = el.varietyForm?.elements.category;
+  if (!select) return;
+
+  const categories = enabledSystemCategories();
+  const optionKey = categories.join("|");
+  if (select.dataset.optionKey !== optionKey) {
+    select.innerHTML = categories
+      .map((category) => `<option value="${escapeAttr(category)}">${escapeHtml(categoryLabels[category])}</option>`)
+      .join("");
+    select.dataset.optionKey = optionKey;
+  }
+
+  select.value = categories.includes(preferredCategory) ? preferredCategory : categories[0];
+  syncVarietyFormCannabisFields();
 }
 
 function syncVarietyFormCannabisFields() {
@@ -2638,6 +2812,10 @@ async function handleVarietySubmit(event) {
   const category = String(form.get("category") || "cannabis");
   const name = String(form.get("name") || "").trim();
   if (!name) return;
+  if (!isCategoryEnabled(category)) {
+    window.alert("Diese Pflanzenfamilie ist in den Einstellungen deaktiviert.");
+    return;
+  }
 
   const minHeight = Number(form.get("heightMin") || 40);
   const maxHeight = Number(form.get("heightMax") || Math.max(minHeight, 120));
@@ -2680,9 +2858,6 @@ async function handleVarietySubmit(event) {
 
   libraryState.customVarieties.push(variety);
   libraryState.addPlantFilters.hiddenVarietyIds = libraryState.addPlantFilters.hiddenVarietyIds.filter((id) => id !== variety.id);
-  if (!libraryState.addPlantFilters.enabledCategories.includes(variety.category)) {
-    libraryState.addPlantFilters.enabledCategories.push(variety.category);
-  }
 
   await saveLibrary();
   el.varietyDialog.close();
@@ -2697,13 +2872,14 @@ function openAddPlantFilterDialog() {
 function renderAddPlantFilterDialog() {
   const enabledCategories = new Set(enabledAddPlantCategories());
   const hiddenVarietyIds = new Set(libraryState.addPlantFilters.hiddenVarietyIds || []);
-  const varieties = allVarieties();
+  const selectableCategories = enabledSystemCategories();
+  const varieties = systemVarieties();
 
-  el.addPlantCategoryOptions.innerHTML = Object.entries(categoryLabels)
-    .map(([category, label]) => `
+  el.addPlantCategoryOptions.innerHTML = selectableCategories
+    .map((category) => `
       <label class="checkbox-row">
         <input type="checkbox" name="enabledCategory" value="${escapeAttr(category)}" ${enabledCategories.has(category) ? "checked" : ""} />
-        <span>${escapeHtml(label)}</span>
+        <span>${escapeHtml(categoryLabels[category])}</span>
       </label>
     `)
     .join("");
@@ -2739,18 +2915,29 @@ async function handleAddPlantFilterSubmit(event) {
   const form = new FormData(el.addPlantFilterForm);
   const enabledCategories = form.getAll("enabledCategory").map(String).filter((category) => categoryLabels[category]);
   const enabledVarietyIds = new Set(form.getAll("enabledVariety").map(String));
+  if (!enabledCategories.length) {
+    window.alert("Bitte wähle mindestens eine Pflanzenfamilie aus.");
+    return;
+  }
+
+  const configurableIds = new Set(systemVarieties().map((variety) => variety.id));
+  const previousHiddenIds = new Set(libraryState.addPlantFilters.hiddenVarietyIds || []);
   const hiddenVarietyIds = allVarieties()
-    .map((variety) => variety.id)
-    .filter((id) => !enabledVarietyIds.has(id));
+    .filter((variety) => (
+      configurableIds.has(variety.id)
+        ? !enabledVarietyIds.has(variety.id)
+        : previousHiddenIds.has(variety.id)
+    ))
+    .map((variety) => variety.id);
 
   libraryState.addPlantFilters = {
-    enabledCategories: enabledCategories.length ? enabledCategories : Object.keys(categoryLabels),
+    enabledCategories,
     hiddenVarietyIds,
   };
 
   await saveLibrary();
   el.addPlantFilterDialog.close();
-  renderDatabase();
+  render();
 }
 
 function openDuplicatePlantDialog(plantId) {
@@ -2865,7 +3052,7 @@ async function handleDuplicatePlantSubmit(event) {
   selectedPlantId = duplicate.id;
   await saveState();
   el.duplicatePlantDialog.close();
-  switchView("dashboard");
+  navigateToPlant(duplicate);
 }
 
 function openEventDialog(plantId, eventId = "") {
@@ -2909,8 +3096,7 @@ async function handlePlantSubmit(event) {
     applyPlantFormDataToPlant(plant, form);
     await saveState();
     el.plantDialog.close();
-    selectedPlantId = plant.id;
-    renderDashboard();
+    navigateToPlant(plant);
     return;
   }
 
@@ -2933,7 +3119,7 @@ async function handlePlantSubmit(event) {
   selectedPlantId = plant.id;
   await saveState();
   el.plantDialog.close();
-  switchView("dashboard");
+  navigateToPlant(plant);
 }
 
 async function handleEventSubmit(event) {
@@ -3430,9 +3616,31 @@ function plantCannabisFormTag(plant, variety) {
   return `<span class="tag">Auswahl: ${escapeHtml(cannabisFormLabels[form] ?? form)}</span>`;
 }
 
+function syncDatabaseCategoryOptions() {
+  if (!el.categoryFilter) return;
+
+  const enabledCategories = enabledSystemCategories();
+  const current = el.categoryFilter.value;
+  const nextValue = current === "all" || enabledCategories.includes(current) ? current : "all";
+  const optionKey = enabledCategories.join("|");
+
+  if (el.categoryFilter.dataset.optionKey !== optionKey) {
+    el.categoryFilter.innerHTML = [
+      `<option value="all">Alle</option>`,
+      ...enabledCategories.map((category) => (
+        `<option value="${escapeAttr(category)}">${escapeHtml(categoryLabels[category])}</option>`
+      )),
+    ].join("");
+    el.categoryFilter.dataset.optionKey = optionKey;
+  }
+
+  el.categoryFilter.value = nextValue;
+}
+
 function syncCannabisFilter() {
+  if (!el.categoryFilter || !el.cannabisFormFilterWrap || !el.cannabisFormFilter) return;
   const category = el.categoryFilter.value;
-  const isRelevant = category === "all" || category === "cannabis";
+  const isRelevant = isCategoryEnabled("cannabis") && (category === "all" || category === "cannabis");
   el.cannabisFormFilterWrap.classList.toggle("filter-hidden", !isRelevant);
   el.cannabisFormFilter.disabled = !isRelevant;
   if (!isRelevant) el.cannabisFormFilter.value = "all";

@@ -1,0 +1,62 @@
+<!-- Sortendatenbank: importierte/eigene Sorten, Filter, Shoplinks und Auswahlfreigabe. -->
+<section class="view active-view" id="databaseView" aria-labelledby="viewTitle">
+  <div class="database-layout">
+    <aside class="filter-panel">
+      <p class="eyebrow">Filter</p>
+      <div class="filter-stack">
+        <label>
+          Kategorie
+          <select id="categoryFilter">
+            <option value="all">Alle</option>
+            <option value="cannabis">Cannabis</option>
+            <option value="tomato">Tomaten</option>
+            <option value="pepper">Paprika</option>
+            <option value="chili">Chili</option>
+          </select>
+        </label>
+        <label>
+          Wuchs
+          <select id="sizeFilter">
+            <option value="all">Alle Größen</option>
+            <option value="compact">Kompakt</option>
+            <option value="medium">Mittel</option>
+            <option value="large">Groß</option>
+            <option value="very-large">Sehr groß</option>
+          </select>
+        </label>
+        <label>
+          Anspruch
+          <select id="difficultyFilter">
+            <option value="all">Alle</option>
+            <option value="Einfach">Einfach</option>
+            <option value="Mittel">Mittel</option>
+            <option value="Anspruchsvoll">Anspruchsvoll</option>
+          </select>
+        </label>
+        <label id="cannabisFormFilterWrap">
+          Cannabis-Auswahl
+          <select id="cannabisFormFilter">
+            <option value="all">Alle</option>
+            <option value="autoflower">Autoflower</option>
+            <option value="feminized">Feminisiert</option>
+            <option value="regular">Klassisch/Regular</option>
+            <option value="cbd">CBD-betont</option>
+          </select>
+        </label>
+      </div>
+    </aside>
+    <section class="workspace-panel">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Sorten</p>
+          <h3 id="databaseCount">Datenbank</h3>
+        </div>
+        <div class="section-actions">
+          <button class="secondary-action" id="openAddPlantFilter" type="button">Pflanzenauswahl</button>
+          <button class="primary-action" id="openAddVariety" type="button">+ Sorte hinzufügen</button>
+        </div>
+      </div>
+      <div class="variety-grid" id="varietyGrid"></div>
+    </section>
+  </div>
+</section>

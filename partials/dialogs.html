@@ -1,0 +1,360 @@
+<!-- Dialog: Pflanze neu anlegen oder vorhandene Pflanze bearbeiten. -->
+<dialog id="plantDialog">
+  <form method="dialog" class="dialog-card" id="plantForm">
+    <div class="dialog-heading">
+      <div>
+        <p class="eyebrow">Neue Pflanze</p>
+        <h3 id="plantDialogTitle">Pflanze anlegen</h3>
+      </div>
+      <button class="icon-button" value="cancel" type="button" id="closePlantDialog" aria-label="Schließen">×</button>
+    </div>
+    <input type="hidden" name="mode" id="plantFormMode" value="create" />
+    <input type="hidden" name="originalId" id="plantOriginalId" />
+    <div class="form-grid">
+      <label>
+        Pflanzenname
+        <input name="nickname" required placeholder="z. B. Balkon Nord 1" />
+      </label>
+      <label>
+        Sorte suchen
+        <input id="varietySearch" type="search" placeholder="Sorte, Hersteller oder Familie suchen..." autocomplete="off" />
+      </label>
+      <label>
+        Sorte
+        <select name="varietyId" id="varietySelect" required size="6"></select>
+      </label>
+      <label id="plantCannabisFormField">
+        Cannabis-Auswahl
+        <select name="cannabisForm" id="plantCannabisFormSelect"></select>
+      </label>
+      <label>
+        Startdatum
+        <input name="startedAt" type="date" required />
+      </label>
+      <label>
+        Phase
+        <select name="stage" required>
+          <option value="seed">Saat</option>
+          <option value="germination">Keimung</option>
+          <option value="seedling">Jungpflanze</option>
+          <option value="vegetative">Wachstum</option>
+          <option value="flowering">Blüte/Frucht</option>
+          <option value="harvest">Ernte</option>
+          <option value="decline">Rückgang</option>
+          <option value="dead">Tot/abgeschlossen</option>
+        </select>
+      </label>
+      <label class="full-span">
+        Standort
+        <input name="location" placeholder="Fensterbank, Balkon, Gewächshaus..." />
+      </label>
+    </div>
+    <div class="dialog-actions">
+      <button class="secondary-action" value="cancel" type="button" id="cancelPlant">Abbrechen</button>
+      <button class="primary-action" value="default" type="submit" id="plantSubmitButton">Anlegen</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Dialog: Pflege-, Standort-, Foto- oder Phasenereignis bearbeiten. -->
+<dialog id="eventDialog">
+  <form method="dialog" class="dialog-card" id="eventForm">
+    <div class="dialog-heading">
+      <div>
+        <p class="eyebrow">Ereignis</p>
+        <h3 id="eventDialogTitle">Eintrag hinzufügen</h3>
+      </div>
+      <button class="icon-button" value="cancel" type="button" id="closeEventDialog" aria-label="Schließen">×</button>
+    </div>
+    <input type="hidden" name="plantId" />
+    <input type="hidden" name="eventId" />
+    <div class="form-grid">
+      <label>
+        Typ
+        <select name="type" id="eventTypeSelect" required>
+          <option value="water">Gießen</option>
+          <option value="feed">Düngen</option>
+          <option value="repot">Umtopfen</option>
+          <option value="prune">Schnitt</option>
+          <option value="observe">Beobachtung</option>
+          <option value="location">Standortwechsel</option>
+          <option value="photo">Foto</option>
+          <option value="harvest">Ernte</option>
+          <option value="stage">Phase ändern</option>
+        </select>
+      </label>
+      <label>
+        Datum
+        <input name="date" type="date" required />
+      </label>
+      <label>
+        Menge / Wert
+        <input name="amount" placeholder="z. B. 350 ml, pH 6.4" />
+      </label>
+      <label>
+        Phase nach Ereignis
+        <select name="stage">
+          <option value="">Unverändert</option>
+          <option value="seed">Saat</option>
+          <option value="germination">Keimung</option>
+          <option value="seedling">Jungpflanze</option>
+          <option value="vegetative">Wachstum</option>
+          <option value="flowering">Blüte/Frucht</option>
+          <option value="harvest">Ernte</option>
+          <option value="decline">Rückgang</option>
+          <option value="dead">Tot/abgeschlossen</option>
+        </select>
+      </label>
+      <fieldset class="dialog-fieldset full-span event-location-fieldset filter-hidden" id="eventLocationFields">
+        <legend>Standort</legend>
+        <label class="checkbox-row" id="eventLocationToggleRow">
+          <input type="checkbox" name="changeLocation" id="eventChangeLocation" />
+          <span>Beim Umtopfen Standort wechseln</span>
+        </label>
+        <p class="dialog-note" id="eventCurrentLocationNote"></p>
+        <label class="location-combobox-label">
+          Neuer Ort
+          <span class="location-combobox browse-dropdown">
+            <span class="browse-dropdown-control">
+              <input
+                name="location"
+                id="eventLocationInput"
+                placeholder="Ort suchen oder neu eingeben..."
+                autocomplete="off"
+                role="combobox"
+                aria-expanded="false"
+                aria-controls="eventLocationMenu"
+              />
+              <button class="browse-dropdown-trigger" id="eventLocationBrowse" type="button" aria-label="Orte durchsuchen">▾</button>
+            </span>
+            <div class="location-combobox-menu" id="eventLocationMenu" role="listbox" hidden></div>
+          </span>
+        </label>
+        <p class="dialog-note">Wähle einen bekannten Ort aus der Liste oder schreibe einen neuen Ort. Unbekannte Orte werden beim Speichern automatisch angelegt.</p>
+      </fieldset>
+      <label class="full-span">
+        Notiz
+        <textarea name="note" rows="3" placeholder="Was ist passiert?"></textarea>
+      </label>
+    </div>
+    <div class="dialog-actions">
+      <button class="secondary-action" value="cancel" type="button" id="cancelEvent">Abbrechen</button>
+      <button class="primary-action" value="default" type="submit">Speichern</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Dialog: eigene Sorte inklusive optionalem Shoplink in library.json speichern. -->
+<dialog id="varietyDialog">
+  <form method="dialog" class="dialog-card wide-dialog" id="varietyForm">
+    <div class="dialog-heading">
+      <div>
+        <p class="eyebrow">Sortendatenbank</p>
+        <h3>Eigene Sorte hinzufügen</h3>
+      </div>
+      <button class="icon-button" value="cancel" type="button" id="closeVarietyDialog" aria-label="Schließen">×</button>
+    </div>
+    <div class="form-grid">
+      <label>
+        Pflanzenfamilie
+        <select name="category" required>
+          <option value="cannabis">Cannabis</option>
+          <option value="tomato">Tomate</option>
+          <option value="pepper">Paprika</option>
+          <option value="chili">Chili</option>
+        </select>
+      </label>
+      <label>
+        Hersteller / Breeder
+        <input name="breeder" placeholder="z. B. Dutch Passion, eigener Samen" />
+      </label>
+      <label>
+        Sortenname
+        <input name="name" required placeholder="z. B. Eigene Kreuzung #1" />
+      </label>
+      <label>
+        Typ
+        <input name="type" placeholder="z. B. Indica-dominanter Hybrid" />
+      </label>
+      <label>
+        Lebenszyklus in Tagen
+        <input name="lifecycleDays" type="number" min="1" step="1" />
+      </label>
+      <label>
+        Wuchs
+        <select name="sizeClass">
+          <option value="compact">Kompakt</option>
+          <option value="medium">Mittel</option>
+          <option value="large">Groß</option>
+          <option value="very-large">Sehr groß</option>
+        </select>
+      </label>
+      <label>
+        Höhe min. cm
+        <input name="heightMin" type="number" min="1" step="1" />
+      </label>
+      <label>
+        Höhe max. cm
+        <input name="heightMax" type="number" min="1" step="1" />
+      </label>
+      <label>
+        Anspruch
+        <select name="difficulty">
+          <option value="Einfach">Einfach</option>
+          <option value="Mittel">Mittel</option>
+          <option value="Anspruchsvoll">Anspruchsvoll</option>
+        </select>
+      </label>
+      <fieldset class="dialog-fieldset full-span" data-cannabis-only>
+        <legend>Cannabis-Auswahl</legend>
+        <label class="checkbox-row"><input type="checkbox" name="cannabisForms" value="feminized" checked /> Feminisiert</label>
+        <label class="checkbox-row"><input type="checkbox" name="cannabisForms" value="autoflower" /> Autoflower</label>
+        <label class="checkbox-row"><input type="checkbox" name="cannabisForms" value="regular" /> Klassisch/Regular</label>
+        <label class="checkbox-row"><input type="checkbox" name="cannabisForms" value="cbd" /> CBD-betont</label>
+      </fieldset>
+      <label class="full-span">
+        Erscheinung / Kurzprofil
+        <textarea name="appearance" rows="3" placeholder="Wie sieht die Pflanze typischerweise aus?"></textarea>
+      </label>
+      <label class="full-span">
+        Geschmack / Aroma
+        <input name="taste" placeholder="z. B. Zitrus, erdig, süß" />
+      </label>
+      <label class="full-span">
+        Merkmale, kommagetrennt
+        <input name="traits" placeholder="z. B. robust, kompakt, fruchtig" />
+      </label>
+      <fieldset class="dialog-fieldset full-span">
+        <legend>Shoplink & Preis optional</legend>
+        <div class="form-grid compact-form-grid">
+          <label>
+            Shopname
+            <input name="shopName" placeholder="z. B. Hof Jeebel, Samenhaus" />
+          </label>
+          <label>
+            Produkt-/Shop-Link
+            <input name="shopUrl" type="url" placeholder="https://..." />
+          </label>
+          <label>
+            Preis
+            <input name="shopPrice" placeholder="z. B. 3,75" />
+          </label>
+          <label>
+            Einheit
+            <input name="shopUnit" placeholder="Portion, 10 Samen, Pflanze" />
+          </label>
+        </div>
+      </fieldset>
+    </div>
+    <div class="dialog-actions">
+      <button class="secondary-action" value="cancel" type="button" id="cancelVariety">Abbrechen</button>
+      <button class="primary-action" value="default" type="submit">Sorte speichern</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Dialog: steuert, welche Kategorien und Sorten beim Pflanze-Anlegen erscheinen. -->
+<dialog id="addPlantFilterDialog">
+  <form method="dialog" class="dialog-card wide-dialog" id="addPlantFilterForm">
+    <div class="dialog-heading">
+      <div>
+        <p class="eyebrow">Pflanze anlegen</p>
+        <h3>Pflanzenauswahl einstellen</h3>
+      </div>
+      <button class="icon-button" value="cancel" type="button" id="closeAddPlantFilterDialog" aria-label="Schließen">×</button>
+    </div>
+    <p class="dialog-note">Hier stellst du ein, welche aktiven Pflanzenfamilien und Sorten im Dialog „Pflanze anlegen“ auswählbar sind. Deaktivierte Systemfamilien aktivierst du wieder im Tab „Einstellungen“.</p>
+    <fieldset class="dialog-fieldset">
+      <legend>Pflanzenfamilien</legend>
+      <div class="checkbox-grid compact" id="addPlantCategoryOptions"></div>
+    </fieldset>
+    <fieldset class="dialog-fieldset full-span">
+      <legend>Sorten</legend>
+      <div class="filter-toolbar">
+        <button class="secondary-action small-action" id="selectAllVarieties" type="button">Alle Sorten aktivieren</button>
+        <button class="secondary-action small-action" id="clearAllVarieties" type="button">Alle Sorten deaktivieren</button>
+      </div>
+      <div class="variety-filter-list" id="addPlantVarietyOptions"></div>
+    </fieldset>
+    <div class="dialog-actions">
+      <button class="secondary-action" value="cancel" type="button" id="cancelAddPlantFilter">Abbrechen</button>
+      <button class="primary-action" value="default" type="submit">Auswahl speichern</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Dialog: Pflanze mit editierbaren Ereignissen als neue Pflanze kopieren. -->
+<dialog id="duplicatePlantDialog">
+  <form method="dialog" class="dialog-card wide-dialog" id="duplicatePlantForm">
+    <div class="dialog-heading">
+      <div>
+        <p class="eyebrow">Pflanze kopieren</p>
+        <h3>Pflanze duplizieren</h3>
+      </div>
+      <button class="icon-button" value="cancel" type="button" id="closeDuplicatePlantDialog" aria-label="Schließen">×</button>
+    </div>
+    <input type="hidden" name="sourcePlantId" />
+    <p class="dialog-note">Ändere vor dem Kopieren Pflanzendaten, Sorte und einzelne Ereignisse. Standardmäßig werden alle Ereignisse übernommen.</p>
+    <div class="form-grid">
+      <label>
+        Neuer Pflanzenname
+        <input name="nickname" required />
+      </label>
+      <label>
+        Sorte suchen
+        <input id="duplicateVarietySearch" type="search" placeholder="Sorte, Hersteller oder Familie suchen..." autocomplete="off" />
+      </label>
+      <label>
+        Sorte
+        <select name="varietyId" id="duplicateVarietySelect" required size="6"></select>
+      </label>
+      <label id="duplicateCannabisFormField">
+        Cannabis-Auswahl
+        <select name="cannabisForm" id="duplicateCannabisFormSelect"></select>
+      </label>
+      <label>
+        Startdatum
+        <input name="startedAt" type="date" required />
+      </label>
+      <label>
+        Phase
+        <select name="stage" required>
+          <option value="seed">Saat</option>
+          <option value="germination">Keimung</option>
+          <option value="seedling">Jungpflanze</option>
+          <option value="vegetative">Wachstum</option>
+          <option value="flowering">Blüte/Frucht</option>
+          <option value="harvest">Ernte</option>
+          <option value="decline">Rückgang</option>
+          <option value="dead">Tot/abgeschlossen</option>
+        </select>
+      </label>
+      <label class="full-span">
+        Standort
+        <input name="location" placeholder="Fensterbank, Balkon, Gewächshaus..." />
+      </label>
+    </div>
+    <fieldset class="dialog-fieldset duplicate-events-fieldset">
+      <legend>Ereignisse übernehmen oder bearbeiten</legend>
+      <div class="duplicate-events-list" id="duplicateEventsList"></div>
+    </fieldset>
+    <div class="dialog-actions">
+      <button class="secondary-action" value="cancel" type="button" id="cancelDuplicatePlant">Abbrechen</button>
+      <button class="primary-action" value="default" type="submit">Kopie anlegen</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Dialog: grosse Fotoansicht; die Bilder selbst kommen aus photos.json. -->
+<dialog id="photoViewerDialog" class="photo-viewer-dialog" aria-label="Foto öffnen">
+  <div class="photo-viewer-card">
+    <div class="photo-viewer-head">
+      <div>
+        <p class="eyebrow">Pflanzenfoto</p>
+        <h3>Foto ansehen</h3>
+      </div>
+      <button class="icon-button" type="button" id="closePhotoViewer" aria-label="Foto schließen">×</button>
+    </div>
+    <div id="photoViewerBody" class="photo-viewer-body"></div>
+  </div>
+</dialog>

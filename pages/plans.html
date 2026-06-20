@@ -1,0 +1,55 @@
+<!-- Pläne: Vorlagen fuer Gießen, Düngen, Kontrolle und Foto-Intervalle. -->
+<section class="view active-view" id="plansView" aria-labelledby="viewTitle">
+  <section class="workspace-panel tasks-panel plans-panel">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Vorlagen</p>
+        <h3>Pflegepläne</h3>
+      </div>
+      <span class="tag" id="carePlanCount">0 Pflegepläne</span>
+    </div>
+    <p class="tasks-intro">Erstelle hier Pflegeplan-Vorlagen. Im Dashboard weist du sie einzelnen Pflanzen zu und kannst sie dort individuell anpassen.</p>
+
+    <div class="care-plan-manager">
+      <form class="care-template-form" id="carePlanTemplateForm">
+        <input type="hidden" name="planId" />
+        <div class="care-template-form-head">
+          <div>
+            <p class="eyebrow">Vorlage</p>
+            <h4 id="carePlanTemplateFormTitle">Pflegeplan erstellen</h4>
+          </div>
+          <button class="secondary-action small-action filter-hidden" id="carePlanTemplateCancel" type="button">Bearbeiten abbrechen</button>
+        </div>
+        <div class="form-grid compact-form-grid">
+          <label class="full-span">Name
+            <input name="name" required placeholder="z. B. Tomaten Balkon Sommer" />
+          </label>
+          <label>Gießen alle
+            <input name="waterEveryDays" type="number" min="0" max="365" step="1" value="0" />
+            <span>Tage</span>
+          </label>
+          <label>Düngen alle
+            <input name="feedEveryDays" type="number" min="0" max="365" step="1" value="0" />
+            <span>Tage</span>
+          </label>
+          <label>Kontrolle alle
+            <input name="observeEveryDays" type="number" min="0" max="365" step="1" value="0" />
+            <span>Tage</span>
+          </label>
+          <label>Foto alle
+            <input name="photoEveryDays" type="number" min="0" max="365" step="1" value="0" />
+            <span>Tage</span>
+          </label>
+          <label class="full-span">Notiz
+            <textarea name="note" rows="2" placeholder="Optional: Standort, Saison oder Besonderheiten"></textarea>
+          </label>
+        </div>
+        <div class="dialog-actions inline-actions">
+          <button class="primary-action" id="carePlanTemplateSubmit" type="submit">Pflegeplan speichern</button>
+        </div>
+      </form>
+
+      <div class="care-template-list" id="carePlanTemplateList"></div>
+    </div>
+  </section>
+</section>

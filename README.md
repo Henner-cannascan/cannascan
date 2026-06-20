@@ -46,12 +46,24 @@ Die App kommt ohne Build-Schritt aus. Der Node-Server liefert die Dateien direkt
 
 ```text
 plant-monitor-lan/
-├── index.html                  # statische UI-Struktur, Views und Dialoge
+├── index.html                  # Fallback-Weiterleitung zum Dashboard
+├── pages/                      # HTML-Fragmente fuer einzelne Unterseiten
+│   ├── dashboard.html
+│   ├── tasks.html
+│   ├── plans.html
+│   ├── database.html
+│   ├── planner.html
+│   ├── history.html
+│   └── settings.html
+├── partials/dialogs.html       # gemeinsam genutzte Dialoge
 ├── styles.css                  # Design Tokens, Layout, Karten, Dialoge, responsive Regeln
 ├── app.js                      # komplette Browserlogik, Rendering und API-Nutzung
 ├── server.js                   # lokaler HTTP-Server, JSON-API, QR-/Shortlinks
 ├── data.js                     # eingebaute Startdatenbank mit Phasen und Sorten
 ├── data-path.json              # Konfiguration fuer den externen Datenordner
+├── database/
+│   ├── schema.sql              # PostgreSQL-Zielschema fuer Serverbetrieb
+│   └── README.md               # Tabellenmodell und Migrationsreihenfolge
 ├── assets/plant-icons/         # lokale Pflanzenbilder
 └── package.json                # Startskripte und optionale Terminal-QR-Abhaengigkeit
 ```
@@ -67,9 +79,23 @@ plant-monitor-data/
 
 ## Architektur
 
-`server.js` ist die einzige Server-Komponente. Er erkennt die LAN-/Hotspot-Adresse, liefert die statische App aus und stellt die API unter `/api/...` bereit. JSON wird ueber temporaere Dateien geschrieben und danach ersetzt, damit die Daten moeglichst nicht halb gespeichert werden.
+`server.js` ist die einzige Server-Komponente. Er erkennt die LAN-/Hotspot-Adresse, rendert die App-Unterseiten aus `pages/*.html` und `partials/dialogs.html` und stellt die API unter `/api/...` bereit. JSON wird ueber temporaere Dateien geschrieben und danach ersetzt, damit die Daten moeglichst nicht halb gespeichert werden.
 
-`app.js` ist die zentrale Frontend-Datei. Sie laedt zuerst die oeffentliche Server-URL, danach Sorten-Erweiterungen aus `library.json`, den Pflanzenstand aus `state.json` und Fotos aus `photos.json`. Aus diesem Zustand rendert sie Dashboard, Aufgaben, Pflegeplaene, Sortendatenbank, Lebenszyklen und History.
+`app.js` ist die zentrale Frontend-Datei. Sie erkennt die aktive Unterseite ueber `body data-view`, laedt zuerst die oeffentliche Server-URL, danach Sorten-Erweiterungen aus `library.json`, den Pflanzenstand aus `state.json` und Fotos aus `photos.json`. Aus diesem Zustand rendert sie die jeweils aktive Unterseite.
+
+Die App hat echte Unterseiten:
+
+```text
+/dashboard  # aktive Pflanzen und Detailansicht
+/tasks      # offene Aufgaben
+/plans      # Pflegeplan-Vorlagen
+/database   # Sortendatenbank
+/planner    # Lebenszyklus-Referenz
+/history    # abgeschlossene und ausgeblendete Pflanzen
+/settings   # sichtbare Pflanzenfamilien systemweit steuern
+```
+
+`/` und `/index.html` zeigen auf das Dashboard. Kurzlinks wie `/p/<code>` leiten ebenfalls auf `/dashboard?plant=<id>` weiter.
 
 `data.js` ist nur die eingebaute Startdatenbank. Laufende Pflanzen, Fotos, Pflegeplaene oder eigene Sorten werden dort nicht gespeichert.
 
@@ -168,11 +194,30 @@ Im Tab `Sortendatenbank` kannst du jetzt:
 - eigene Sorten hinzufügen
 - Hersteller/Breeder speichern
 - Cannabis-Formen wie feminisiert, Autoflower, Regular oder CBD-betont hinterlegen
-- über `Pflanzenauswahl` festlegen, welche Pflanzenfamilien und Sorten im Dialog `Pflanze anlegen` erscheinen
+- über `Pflanzenauswahl` festlegen, welche Sorten innerhalb der aktiven Familien im Dialog `Pflanze anlegen` erscheinen
 
 Die eigenen Sorten und die Auswahlfilter werden in `plant-monitor-data/library.json` gespeichert.
 
 Die eingebaute Cannabis-Startdatenbank enthält eine erweiterte Herstellerliste. Herstellerkataloge ändern sich laufend; die Liste ist deshalb als Startdatenbank gedacht und kann über eigene Sorten ergänzt werden.
+
+## Einstellungen und Pflanzenfamilien
+
+Im Tab `Einstellungen` legst du fest, welche Pflanzenfamilien im System aktiv sind. Deaktivierte Familien bleiben in den JSON-Dateien gespeichert, werden aber in Dashboard, Aufgaben, Sortendatenbank, History, Auswahlfeldern und Dialogen ausgeblendet.
+
+Die Auswahl wird in `plant-monitor-data/library.json` unter `addPlantFilters.enabledCategories` gespeichert. Mindestens eine Familie muss aktiv bleiben, damit das System immer eine sichtbare Arbeitsbasis hat.
+
+## Server-Datenbank-Zielschema
+
+Für den späteren Mehrnutzer-Serverbetrieb liegt unter `database/schema.sql` ein PostgreSQL-Schema. Es ersetzt die lokalen JSON-Dateien noch nicht, beschreibt aber das Zielmodell:
+
+- numerisch hochlaufende `bigint identity` IDs in allen Tabellen
+- Nutzerkonten, Sessions und gespeicherte Geräte
+- Workspaces für gemeinsam genutzte Pflanzenbestände
+- Sorten, Familien, Pflanzen, Ereignisse, Orte, Pflegepläne und Fotos als relationale Tabellen
+- Foto-Metadaten in der Datenbank, Bilddateien im Server-/Object-Storage
+- Migrationstabellen für die bestehenden JSON-IDs
+
+Details und die empfohlene Migrationsreihenfolge stehen in `database/README.md`.
 
 ## WLAN / Hotspot
 

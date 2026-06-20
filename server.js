@@ -8,7 +8,7 @@
  * Persistenz:
  * - state.json: Pflanzen, Ereignisse, Orte, Pflegeplaene und Shortcodes
  * - photos.json: komprimierte Fotos und Thumbnails
- * - library.json: eigene Sorten, Pflanzenauswahl-Filter und Shoplinks
+ * - library.json: eigene Sorten, Systemfamilien, Pflanzenauswahl-Filter und Shoplinks
  *
  * Der Datenordner liegt ausserhalb des Projektordners, damit App-Updates die
  * Nutzerdaten nicht ueberschreiben.
@@ -39,6 +39,70 @@ const ROOT = __dirname;
 const DATA_PATH_FILE = path.join(ROOT, 'data-path.json');
 const DEFAULT_EXTERNAL_DATA_DIR = '../plant-monitor-data';
 const OLD_PROJECT_DATA_DIR = path.join(ROOT, 'server-data');
+const KNOWN_CATEGORIES = ['cannabis', 'tomato', 'pepper', 'chili'];
+const APP_PAGES = {
+  dashboard: {
+    route: '/dashboard',
+    file: 'dashboard.html',
+    icon: '⌂',
+    navLabel: 'Dashboard',
+    title: 'Dashboard',
+    eyebrow: 'Pflanzenverwaltung',
+  },
+  tasks: {
+    route: '/tasks',
+    file: 'tasks.html',
+    icon: '✓',
+    navLabel: 'Aufgaben',
+    title: 'Aufgaben',
+    eyebrow: 'Erinnerungen',
+  },
+  plans: {
+    route: '/plans',
+    file: 'plans.html',
+    icon: '☷',
+    navLabel: 'Pläne',
+    title: 'Pläne',
+    eyebrow: 'Vorlagen',
+  },
+  database: {
+    route: '/database',
+    file: 'database.html',
+    icon: '◎',
+    navLabel: 'Sortendatenbank',
+    title: 'Sortendatenbank',
+    eyebrow: 'Sortenverwaltung',
+  },
+  planner: {
+    route: '/planner',
+    file: 'planner.html',
+    icon: '◷',
+    navLabel: 'Lebenszyklen',
+    title: 'Lebenszyklen',
+    eyebrow: 'Referenz',
+  },
+  history: {
+    route: '/history',
+    file: 'history.html',
+    icon: '↺',
+    navLabel: 'History',
+    title: 'History',
+    eyebrow: 'Archiv',
+  },
+  settings: {
+    route: '/settings',
+    file: 'settings.html',
+    icon: '⚙',
+    navLabel: 'Einstellungen',
+    title: 'Einstellungen',
+    eyebrow: 'System',
+  },
+};
+const APP_PAGE_ALIASES = new Map([
+  ['/', 'dashboard'],
+  ['/index.html', 'dashboard'],
+  ...Object.entries(APP_PAGES).flatMap(([key, page]) => [[page.route, key], [`${page.route}.html`, key]]),
+]);
 
 // ---------------------------------------------------------------------------
 // Datenpfade
@@ -161,9 +225,10 @@ function defaultLibrary() {
   return {
     customVarieties: [],
     addPlantFilters: {
-      enabledCategories: ['cannabis', 'tomato', 'pepper'],
+      enabledCategories: [...KNOWN_CATEGORIES],
       hiddenVarietyIds: [],
     },
+    shopLinksByVarietyId: {},
   };
 }
 
@@ -324,15 +389,22 @@ function normalizeLibrary(value) {
   const fallback = defaultLibrary();
   const library = value && typeof value === 'object' ? value : fallback;
   const filters = library.addPlantFilters && typeof library.addPlantFilters === 'object' ? library.addPlantFilters : {};
+  const enabledCategories = Array.isArray(filters.enabledCategories) && filters.enabledCategories.length
+    ? [...new Set(filters.enabledCategories.filter(category => KNOWN_CATEGORIES.includes(category)))]
+    : [...fallback.addPlantFilters.enabledCategories];
+  if (enabledCategories.includes('pepper') && !enabledCategories.includes('chili')) {
+    enabledCategories.push('chili');
+  }
 
   return {
     customVarieties: Array.isArray(library.customVarieties) ? library.customVarieties : [],
     addPlantFilters: {
-      enabledCategories: Array.isArray(filters.enabledCategories) && filters.enabledCategories.length
-        ? filters.enabledCategories
-        : fallback.addPlantFilters.enabledCategories,
+      enabledCategories: enabledCategories.length ? enabledCategories : fallback.addPlantFilters.enabledCategories,
       hiddenVarietyIds: Array.isArray(filters.hiddenVarietyIds) ? filters.hiddenVarietyIds : [],
     },
+    shopLinksByVarietyId: library.shopLinksByVarietyId && typeof library.shopLinksByVarietyId === 'object'
+      ? library.shopLinksByVarietyId
+      : fallback.shopLinksByVarietyId,
   };
 }
 
@@ -350,6 +422,100 @@ function summarizePhoto(photo) {
   const { dataUrl, ...summary } = photo || {};
   summary.hasFullImage = Boolean(dataUrl);
   return summary;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function readProjectText(relativePath) {
+  return fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
+}
+
+function normalizeAppPath(pathname) {
+  if (pathname.length > 1) return pathname.replace(/\/+$/, '');
+  return pathname;
+}
+
+function appPageKeyFromPath(pathname) {
+  return APP_PAGE_ALIASES.get(normalizeAppPath(pathname)) || '';
+}
+
+function renderAppNav(activePageKey) {
+  return Object.entries(APP_PAGES)
+    .map(([key, page]) => `
+          <a class="nav-button ${key === activePageKey ? 'active' : ''}" data-view="${escapeHtml(key)}" href="${escapeHtml(page.route)}">
+            <span aria-hidden="true">${escapeHtml(page.icon)}</span>
+            ${escapeHtml(page.navLabel)}
+          </a>`)
+    .join('');
+}
+
+function renderAppPage(pageKey) {
+  const page = APP_PAGES[pageKey] || APP_PAGES.dashboard;
+  const viewHtml = readProjectText(path.join('pages', page.file));
+  const dialogsHtml = readProjectText(path.join('partials', 'dialogs.html'));
+
+  return `<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(page.title)} · Plant Monitor</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/styles.css?v=13" />
+  </head>
+  <body data-view="${escapeHtml(pageKey)}">
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="/dashboard" aria-label="Plant Monitor Dashboard">
+          <div class="brand-mark" aria-hidden="true">PM</div>
+          <div>
+            <h1>Plant Monitor</h1>
+            <p>Saat bis Ende</p>
+          </div>
+        </a>
+
+        <nav class="nav" aria-label="Hauptnavigation">
+${renderAppNav(pageKey)}
+        </nav>
+
+        <div class="sidebar-panel">
+          <span class="panel-label">Prototyp</span>
+          <p>Alle Einträge werden auf dem Laptop-Server gespeichert.</p>
+          <div class="storage-status" id="storageStatus">Speicher wird geprüft...</div>
+        </div>
+      </aside>
+
+      <main>
+        <section class="topbar">
+          <div>
+            <p class="eyebrow">${escapeHtml(page.eyebrow)}</p>
+            <h2 id="viewTitle">${escapeHtml(page.title)}</h2>
+          </div>
+          <div class="top-actions">
+            <div class="search-wrap">
+              <input id="globalSearch" type="search" placeholder="Sorte, Geschmack, Eigenschaft..." />
+            </div>
+            <button class="primary-action" id="openAddPlant" type="button">+ Pflanze anlegen</button>
+          </div>
+        </section>
+
+${viewHtml}
+      </main>
+    </div>
+
+${dialogsHtml}
+
+    <script src="/data.js?v=7"></script>
+    <script src="/app.js?v=13"></script>
+  </body>
+</html>`;
 }
 
 function getStaticCacheControl(filePath) {
@@ -398,6 +564,10 @@ function send(res, statusCode, content, contentType = 'text/plain; charset=utf-8
 
 function sendJson(res, statusCode, value) {
   send(res, statusCode, JSON.stringify(value), 'application/json; charset=utf-8');
+}
+
+function sendHtml(res, statusCode, html) {
+  send(res, statusCode, html, 'text/html; charset=utf-8');
 }
 
 function safeResolve(requestPath) {
@@ -736,10 +906,19 @@ const server = http.createServer((req, res) => {
       return send(res, 404, 'Pflanze nicht gefunden');
     }
     res.writeHead(302, {
-      Location: `/?plant=${encodeURIComponent(plant.id)}`,
+      Location: `/dashboard?plant=${encodeURIComponent(plant.id)}`,
       'Cache-Control': 'no-store',
     });
     return res.end();
+  }
+
+  const pageKey = appPageKeyFromPath(url.pathname);
+  if ((req.method === 'GET' || req.method === 'HEAD') && pageKey) {
+    const html = renderAppPage(pageKey);
+    if (req.method === 'HEAD') {
+      return send(res, 200, '', 'text/html; charset=utf-8');
+    }
+    return sendHtml(res, 200, html);
   }
 
   if (url.pathname.startsWith('/api/')) {

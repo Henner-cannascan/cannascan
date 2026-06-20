@@ -1,0 +1,24 @@
+<!-- Dashboard: aktive Pflanzen, Sortierung, Detailbereich, Fotos und Pflegeplan. -->
+<section class="view active-view" id="dashboardView" aria-labelledby="viewTitle">
+  <div class="stats-grid" id="statsGrid"></div>
+  <div class="dashboard-grid">
+    <section class="workspace-panel plant-list-panel">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Aktive Pflanzen</p>
+          <h3>Dashboard</h3>
+        </div>
+        <div class="segmented" role="tablist" aria-label="Pflanzenfilter">
+          <button class="segment active" data-plant-filter="all" type="button">Alle</button>
+          <button class="segment" data-plant-filter="cannabis" type="button">Cannabis</button>
+          <button class="segment" data-plant-filter="tomato" type="button">Tomaten</button>
+          <button class="segment" data-plant-filter="pepper" type="button">Paprika</button>
+          <button class="segment" data-plant-filter="chili" type="button">Chili</button>
+        </div>
+      </div>
+      <div class="plant-grid" id="plantGrid"></div>
+    </section>
+
+    <section class="workspace-panel focus-panel" id="focusPanel"></section>
+  </div>
+</section>

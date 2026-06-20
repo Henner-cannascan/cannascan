@@ -1,0 +1,30 @@
+<!-- History: abgeschlossene und ausgeblendete Pflanzen. -->
+<section class="view active-view" id="historyView" aria-labelledby="viewTitle">
+  <section class="workspace-panel">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Archiv</p>
+        <h3>Abgeschlossene Pflanzen</h3>
+      </div>
+      <div class="section-actions history-actions">
+        <label class="history-year-filter">
+          Jahr
+          <select id="historyYearFilter" aria-label="History nach Abschlussjahr filtern">
+            <option value="all">Alle Jahre</option>
+          </select>
+        </label>
+        <span class="tag" id="historyCount">0 Pflanzen</span>
+      </div>
+    </div>
+    <div class="history-grid" id="historyGrid"></div>
+
+    <details class="hidden-plants-panel">
+      <summary>
+        <span>Ausgeblendete Pflanzen verwalten</span>
+        <span class="tag" id="hiddenCount">0 Pflanzen</span>
+      </summary>
+      <p>Diese Pflanzen sind nur ausgeblendet und bleiben in den Server-Daten gespeichert.</p>
+      <div class="history-grid hidden-grid" id="hiddenGrid"></div>
+    </details>
+  </section>
+</section>
