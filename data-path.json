@@ -1,0 +1,4 @@
+{
+  "dataDir": "../plant-monitor-data",
+  "note": "Dieser Pfad wird relativ zum Projektordner aufgelöst. Du kannst hier auch einen absoluten Pfad eintragen."
+}
