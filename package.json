@@ -1,0 +1,13 @@
+{
+  "name": "plant-monitor-lan",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Plant Monitor lokal im WLAN starten",
+  "scripts": {
+    "start": "node server.js",
+    "start:3001": "PORT=3001 node server.js"
+  },
+  "dependencies": {
+    "qrcode-terminal": "^0.12.0"
+  }
+}
