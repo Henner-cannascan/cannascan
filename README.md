@@ -219,6 +219,22 @@ Für den späteren Mehrnutzer-Serverbetrieb liegt unter `database/schema.sql` ei
 
 Details und die empfohlene Migrationsreihenfolge stehen in `database/README.md`.
 
+Lokal kannst du PostgreSQL und pgAdmin bereits per Docker starten:
+
+```bash
+cp .env.example .env
+docker compose up -d
+```
+
+Danach:
+
+```text
+PostgreSQL: localhost:5432
+pgAdmin:    http://localhost:5050
+```
+
+Die SQL-Migration wird beim ersten Start automatisch aus `database/schema.sql` geladen. Der spaetere Bildspeicher ist als lokaler Ordner `server-uploads/` vorgesehen und wird nicht ins Git-Repo aufgenommen.
+
 ## WLAN / Hotspot
 
 Die Handy-Adresse wird nicht mehr fest auf eine alte Hotspot-IP gesetzt. Standardmäßig verwendet der Server die aktuell erkannte Netzwerk-IP.

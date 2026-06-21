@@ -50,3 +50,54 @@ Als naechstes braucht die App eine Backend-Schicht, die dieses Schema nutzt:
 - API-Routen mit Workspace-Rechtepruefung
 - Upload-Endpunkte fuer Fotos
 - Migrationsskript von JSON nach PostgreSQL
+
+## Lokal mit Docker starten
+
+Im Projektordner:
+
+```bash
+cp .env.example .env
+docker compose up -d
+```
+
+Beim ersten Start legt PostgreSQL die Datenbank an und fuehrt `database/schema.sql` automatisch aus. Die Datenbank bleibt danach im Docker-Volume `postgres-data` erhalten.
+
+Pruefen:
+
+```bash
+docker compose ps
+docker compose exec postgres psql -U plant_monitor -d plant_monitor -c "\\dt"
+```
+
+pgAdmin ist danach erreichbar unter:
+
+```text
+http://localhost:5050
+```
+
+Standard-Login aus `.env.example`:
+
+```text
+admin@plant-monitor.local
+plant_monitor_admin
+```
+
+In pgAdmin einen neuen Server anlegen:
+
+```text
+Name: Plant Monitor Local
+Host: postgres
+Port: 5432
+Maintenance database: plant_monitor
+Username: plant_monitor
+Password: plant_monitor_dev_password
+```
+
+Schema neu initialisieren:
+
+```bash
+docker compose down -v
+docker compose up -d
+```
+
+`down -v` loescht das lokale Datenbank-Volume. Nur fuer Entwicklungsdaten verwenden.
