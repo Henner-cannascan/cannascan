@@ -48,6 +48,7 @@ Die App kommt ohne Build-Schritt aus. Der Node-Server liefert die Dateien direkt
 plant-monitor-lan/
 ├── index.html                  # Fallback-Weiterleitung zum Dashboard
 ├── pages/                      # HTML-Fragmente fuer einzelne Unterseiten
+│   ├── login.html
 │   ├── dashboard.html
 │   ├── tasks.html
 │   ├── plans.html
@@ -58,6 +59,7 @@ plant-monitor-lan/
 ├── partials/dialogs.html       # gemeinsam genutzte Dialoge
 ├── styles.css                  # Design Tokens, Layout, Karten, Dialoge, responsive Regeln
 ├── app.js                      # komplette Browserlogik, Rendering und API-Nutzung
+├── auth.js                     # Login-/Registrierungslogik fuer /login
 ├── server.js                   # lokaler HTTP-Server, JSON-API, QR-/Shortlinks
 ├── data.js                     # eingebaute Startdatenbank mit Phasen und Sorten
 ├── data-path.json              # Konfiguration fuer den externen Datenordner
@@ -74,7 +76,8 @@ Die Nutzdaten liegen getrennt im externen Datenordner:
 plant-monitor-data/
 ├── state.json                  # Pflanzen, Ereignisse, Pflegeplaene, Shortcodes
 ├── photos.json                 # komprimierte Fotos und Thumbnails
-└── library.json                # eigene Sorten, Pflanzenauswahl-Filter, Shoplinks
+├── library.json                # eigene Sorten, Pflanzenauswahl-Filter, Shoplinks
+└── auth.json                   # Benutzer, Passwort-Hashes und Sessions
 ```
 
 ## Architektur
@@ -86,6 +89,7 @@ plant-monitor-data/
 Die App hat echte Unterseiten:
 
 ```text
+/login      # Landingpage zum Anmelden und Konto erstellen
 /dashboard  # aktive Pflanzen und Detailansicht
 /tasks      # offene Aufgaben
 /plans      # Pflegeplan-Vorlagen
@@ -95,9 +99,21 @@ Die App hat echte Unterseiten:
 /settings   # sichtbare Pflanzenfamilien systemweit steuern
 ```
 
-`/` und `/index.html` zeigen auf das Dashboard. Kurzlinks wie `/p/<code>` leiten ebenfalls auf `/dashboard?plant=<id>` weiter.
+`/` und `/index.html` zeigen nach dem Login auf das Dashboard. Kurzlinks wie `/p/<code>` leiten nach erfolgreicher Anmeldung ebenfalls auf `/dashboard?plant=<id>` weiter.
 
 `data.js` ist nur die eingebaute Startdatenbank. Laufende Pflanzen, Fotos, Pflegeplaene oder eigene Sorten werden dort nicht gespeichert.
+
+## Login und Benutzerzuordnung
+
+`/login` ist die Landingpage fuer Anmeldung und Registrierung. Der Login laeuft ueber den Benutzernamen; bei der Registrierung muss trotzdem eine E-Mail-Adresse hinterlegt werden. E-Mails werden aktuell nur gespeichert und noch nicht versendet.
+
+Der Server speichert Konten und Sessions in `auth.json`:
+
+- Passwoerter werden nicht im Klartext gespeichert, sondern mit `scrypt` und eindeutigem Salt gehasht.
+- Das Session-Token liegt nur als Hash in `auth.json`. Im Browser liegt es als `HttpOnly`-Cookie `pm_session`.
+- Ohne `Gerät merken` laeuft die Session nach 12 Stunden ab. Mit `Gerät merken` bleibt sie 60 Tage gueltig.
+- Beim ersten angelegten Konto uebernimmt dieser Benutzer vorhandene alte Pflanzen, Pflegeplaene und Fotos.
+- Danach werden Pflanzen, Pflegeplaene, Orte und Fotos beim Laden und Speichern nach `ownerUserId` getrennt.
 
 ## Dashboard-Sortierung
 

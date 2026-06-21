@@ -1,0 +1,63 @@
+    <main class="auth-shell">
+      <section class="auth-intro" aria-labelledby="authTitle">
+        <a class="auth-brand" href="/login" aria-label="Plant Monitor Login">
+          <span class="brand-mark" aria-hidden="true">PM</span>
+          <span>
+            <strong>Plant Monitor</strong>
+            <small>Saat bis Ende</small>
+          </span>
+        </a>
+
+        <div>
+          <p class="eyebrow">Lokaler Server</p>
+          <h1 id="authTitle">Melde dich an, um deine Pflanzen zu verwalten.</h1>
+          <p>
+            Jedes Konto bekommt eigene Pflanzen, Ereignisse und Fotos. Die E-Mail wird nur hinterlegt;
+            Nachrichten werden aktuell noch nicht versendet.
+          </p>
+        </div>
+      </section>
+
+      <section class="auth-card" aria-label="Anmeldung">
+        <div class="auth-tabs" role="tablist" aria-label="Login oder Registrierung">
+          <button class="active" data-auth-tab="login" type="button">Anmelden</button>
+          <button data-auth-tab="register" type="button">Konto erstellen</button>
+        </div>
+
+        <form class="auth-form active" id="loginForm" data-auth-form="login">
+          <label>Benutzername
+            <input name="username" autocomplete="username" required />
+          </label>
+          <label>Passwort
+            <input name="password" type="password" autocomplete="current-password" required />
+          </label>
+          <label class="auth-check">
+            <input name="rememberDevice" type="checkbox" />
+            <span>Dieses Gerät merken</span>
+          </label>
+          <button class="primary-action" type="submit">Anmelden</button>
+        </form>
+
+        <form class="auth-form" id="registerForm" data-auth-form="register">
+          <label>Benutzername
+            <input name="username" autocomplete="username" required minlength="3" maxlength="32" pattern="[A-Za-z0-9_.-]{3,32}" />
+          </label>
+          <label>E-Mail
+            <input name="email" type="email" autocomplete="email" required />
+          </label>
+          <label>Passwort
+            <input name="password" type="password" autocomplete="new-password" required minlength="8" />
+          </label>
+          <label>Passwort wiederholen
+            <input name="passwordConfirm" type="password" autocomplete="new-password" required minlength="8" />
+          </label>
+          <label class="auth-check">
+            <input name="rememberDevice" type="checkbox" checked />
+            <span>Dieses Gerät merken</span>
+          </label>
+          <button class="primary-action" type="submit">Konto erstellen</button>
+        </form>
+
+        <p class="auth-message" id="authMessage" role="status" aria-live="polite"></p>
+      </section>
+    </main>

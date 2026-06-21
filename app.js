@@ -7,6 +7,7 @@
  * Sortendatenbank, Lebenszyklen, History und Einstellungen.
  *
  * Wichtige Datenfluesse:
+ * - /api/auth/me: aktuell angemeldeter Benutzer und Sessionstatus
  * - /api/state: Pflanzen, Ereignisse, Orte, Pflegeplan-Zuordnung und Historie
  * - /api/photos: komprimierte Foto- und Thumbnail-dataUrls
  * - /api/library: eigene Sorten, Systemfamilien, Pflanzenauswahl-Filter und Shoplinks
@@ -130,6 +131,7 @@ let addPlantVarietiesCache = null;
 let publicBaseUrl = "";
 let serverStorageAvailable = false;
 let initialPlantRouteApplied = false;
+let currentUser = null;
 
 // Zentrale DOM-Referenzen aus index.html. Dynamisch erzeugte Karten werden in
 // den Renderfunktionen nach dem innerHTML-Aufbau verdrahtet.
@@ -167,6 +169,8 @@ const el = {
   systemFamilyOptions: document.querySelector("#systemFamilyOptions"),
   systemFamilySummary: document.querySelector("#systemFamilySummary"),
   storageStatus: document.querySelector("#storageStatus"),
+  currentUserLabel: document.querySelector("#currentUserLabel"),
+  logoutButton: document.querySelector("#logoutButton"),
   plantDialog: document.querySelector("#plantDialog"),
   eventDialog: document.querySelector("#eventDialog"),
   eventTypeSelect: document.querySelector("#eventTypeSelect"),
@@ -212,12 +216,43 @@ async function api(path, options = {}) {
   });
 
   if (!response.ok) {
+    if (response.status === 401 && !window.location.pathname.startsWith("/login")) {
+      const next = `${window.location.pathname}${window.location.search}`;
+      window.location.href = `/login?next=${encodeURIComponent(next)}`;
+    }
     const message = await response.text().catch(() => "");
     throw new Error(message || `Serverfehler ${response.status}`);
   }
 
   if (response.status === 204) return null;
   return response.json();
+}
+
+function updateAccountPanel() {
+  if (!el.currentUserLabel) return;
+  if (!currentUser) {
+    el.currentUserLabel.textContent = "Nicht angemeldet";
+    return;
+  }
+  el.currentUserLabel.textContent = `${currentUser.username} · ${currentUser.email}`;
+}
+
+async function loadCurrentUser() {
+  const session = await api("/api/auth/me");
+  currentUser = session.user || null;
+  updateAccountPanel();
+}
+
+async function logoutCurrentUser() {
+  try {
+    await api("/api/auth/logout", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  } catch (error) {
+    console.warn("Abmelden konnte nicht sauber bestätigt werden:", error);
+  }
+  window.location.href = "/login";
 }
 
 function updateStorageStatus(message, tone = "checking") {
@@ -869,6 +904,7 @@ async function saveState() {
 async function init() {
   bindEvents();
   preloadStaticAssets().catch((error) => console.warn("Asset-Preload fehlgeschlagen:", error));
+  await loadCurrentUser();
   await loadPublicBaseUrl();
   await loadLibraryFromServer();
   // Die grosse Sortenauswahl wird erst beim Oeffnen des Dialogs aufgebaut.
@@ -899,6 +935,7 @@ function bindEvents() {
   });
 
   el.globalSearch?.addEventListener("input", render);
+  el.logoutButton?.addEventListener("click", logoutCurrentUser);
   el.categoryFilter?.addEventListener("change", renderDatabase);
   el.sizeFilter?.addEventListener("change", renderDatabase);
   el.difficultyFilter?.addEventListener("change", renderDatabase);

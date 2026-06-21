@@ -9,11 +9,13 @@
  * - state.json: Pflanzen, Ereignisse, Orte, Pflegeplaene und Shortcodes
  * - photos.json: komprimierte Fotos und Thumbnails
  * - library.json: eigene Sorten, Systemfamilien, Pflanzenauswahl-Filter und Shoplinks
+ * - auth.json: Benutzerkonten, Passwort-Hashes und geraetebezogene Sessions
  *
  * Der Datenordner liegt ausserhalb des Projektordners, damit App-Updates die
  * Nutzerdaten nicht ueberschreiben.
  */
 const http = require('http');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -153,6 +155,12 @@ const DATA_DIR = resolveDataDir();
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const PHOTOS_FILE = path.join(DATA_DIR, 'photos.json');
 const LIBRARY_FILE = path.join(DATA_DIR, 'library.json');
+const AUTH_FILE = path.join(DATA_DIR, 'auth.json');
+const SESSION_COOKIE = 'pm_session';
+const STANDARD_SESSION_SECONDS = 12 * 60 * 60;
+const REMEMBER_DEVICE_SESSION_SECONDS = 60 * 24 * 60 * 60;
+const PASSWORD_MIN_LENGTH = 8;
+const USERNAME_PATTERN = /^[a-zA-Z0-9_.-]{3,32}$/;
 
 // MIME-Typen fuer die statisch ausgelieferten Frontend-Dateien und Bildassets.
 const MIME_TYPES = {
@@ -267,6 +275,10 @@ function ensureDataFiles() {
     LIBRARY_FILE,
     defaultLibrary(),
   );
+
+  if (!fs.existsSync(AUTH_FILE)) {
+    fs.writeFileSync(AUTH_FILE, JSON.stringify(defaultAuth(), null, 2), 'utf8');
+  }
 }
 
 // Robustes JSON-Lesen: bei defekten Dateien startet die App mit Fallback-Daten,
@@ -289,6 +301,394 @@ function writeJson(filePath, value) {
   const tempFile = `${filePath}.tmp`;
   fs.writeFileSync(tempFile, JSON.stringify(value, null, 2), 'utf8');
   fs.renameSync(tempFile, filePath);
+}
+
+function defaultAuth() {
+  return {
+    nextUserId: 1,
+    nextSessionId: 1,
+    users: [],
+    sessions: [],
+  };
+}
+
+function normalizeNumericId(value) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : 0;
+}
+
+function normalizeAuth(value) {
+  const fallback = defaultAuth();
+  const auth = value && typeof value === 'object' ? value : fallback;
+  const users = Array.isArray(auth.users)
+    ? auth.users.map((user) => ({
+        id: normalizeNumericId(user.id),
+        username: String(user.username || '').trim(),
+        email: String(user.email || '').trim().toLowerCase(),
+        passwordHash: String(user.passwordHash || ''),
+        createdAt: user.createdAt || new Date().toISOString(),
+        lastLoginAt: user.lastLoginAt || '',
+      })).filter((user) => user.id && user.username && user.email && user.passwordHash)
+    : [];
+  const sessions = Array.isArray(auth.sessions)
+    ? auth.sessions.map((session) => ({
+        id: normalizeNumericId(session.id),
+        userId: normalizeNumericId(session.userId),
+        tokenHash: String(session.tokenHash || ''),
+        rememberDevice: Boolean(session.rememberDevice),
+        deviceName: String(session.deviceName || '').slice(0, 120),
+        userAgent: String(session.userAgent || '').slice(0, 260),
+        ipAddress: String(session.ipAddress || '').slice(0, 80),
+        createdAt: session.createdAt || new Date().toISOString(),
+        lastSeenAt: session.lastSeenAt || session.createdAt || new Date().toISOString(),
+        expiresAt: session.expiresAt || '',
+        revokedAt: session.revokedAt || '',
+      })).filter((session) => session.id && session.userId && session.tokenHash)
+    : [];
+  const highestUserId = users.reduce((max, user) => Math.max(max, user.id), 0);
+  const highestSessionId = sessions.reduce((max, session) => Math.max(max, session.id), 0);
+
+  return {
+    nextUserId: Math.max(normalizeNumericId(auth.nextUserId), highestUserId + 1, 1),
+    nextSessionId: Math.max(normalizeNumericId(auth.nextSessionId), highestSessionId + 1, 1),
+    users,
+    sessions,
+  };
+}
+
+function readAuth() {
+  return normalizeAuth(readJson(AUTH_FILE, defaultAuth()));
+}
+
+function writeAuth(nextAuth) {
+  const auth = normalizeAuth(nextAuth);
+  writeJson(AUTH_FILE, auth);
+  return auth;
+}
+
+function normalizeUsername(value) {
+  return String(value || '').trim();
+}
+
+function usernameKey(value) {
+  return normalizeUsername(value).toLocaleLowerCase('de');
+}
+
+function normalizeEmail(value) {
+  return String(value || '').trim().toLocaleLowerCase('de');
+}
+
+function publicUser(user) {
+  if (!user) return null;
+  return {
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    createdAt: user.createdAt,
+    lastLoginAt: user.lastLoginAt || '',
+  };
+}
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('base64url');
+  const params = { N: 131072, r: 8, p: 1, maxmem: 160 * 1024 * 1024 };
+  const derived = crypto.scryptSync(String(password), salt, 64, params).toString('base64url');
+  return `scrypt$${params.N}$${params.r}$${params.p}$${salt}$${derived}`;
+}
+
+function verifyPassword(password, storedHash) {
+  const parts = String(storedHash || '').split('$');
+  if (parts.length !== 6 || parts[0] !== 'scrypt') return false;
+  const [, nValue, rValue, pValue, salt, expectedValue] = parts;
+  const params = {
+    N: Number(nValue),
+    r: Number(rValue),
+    p: Number(pValue),
+    maxmem: 160 * 1024 * 1024,
+  };
+  if (!params.N || !params.r || !params.p || !salt || !expectedValue) return false;
+
+  try {
+    const actual = crypto.scryptSync(String(password), salt, 64, params);
+    const expected = Buffer.from(expectedValue, 'base64url');
+    return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+  } catch {
+    return false;
+  }
+}
+
+function randomToken() {
+  return crypto.randomBytes(32).toString('base64url');
+}
+
+function hashSessionToken(token) {
+  return crypto.createHash('sha256').update(String(token || '')).digest('base64url');
+}
+
+function parseCookies(header) {
+  return String(header || '')
+    .split(';')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .reduce((cookies, part) => {
+      const separator = part.indexOf('=');
+      if (separator < 0) return cookies;
+      const key = part.slice(0, separator).trim();
+      const value = part.slice(separator + 1).trim();
+      try {
+        cookies[key] = decodeURIComponent(value);
+      } catch {
+        cookies[key] = value;
+      }
+      return cookies;
+    }, {});
+}
+
+function isHttpsRequest(req) {
+  return Boolean(req.socket.encrypted || String(req.headers['x-forwarded-proto'] || '').toLowerCase() === 'https');
+}
+
+function serializeCookie(name, value, options = {}) {
+  const parts = [`${name}=${encodeURIComponent(value)}`];
+  if (options.maxAge !== undefined) parts.push(`Max-Age=${Math.max(0, Number(options.maxAge) || 0)}`);
+  if (options.path) parts.push(`Path=${options.path}`);
+  if (options.httpOnly) parts.push('HttpOnly');
+  if (options.sameSite) parts.push(`SameSite=${options.sameSite}`);
+  if (options.secure) parts.push('Secure');
+  return parts.join('; ');
+}
+
+function sessionCookie(token, maxAgeSeconds, req) {
+  return serializeCookie(SESSION_COOKIE, token, {
+    maxAge: maxAgeSeconds,
+    path: '/',
+    httpOnly: true,
+    sameSite: 'Lax',
+    secure: isHttpsRequest(req),
+  });
+}
+
+function clearSessionCookie(req) {
+  return serializeCookie(SESSION_COOKIE, '', {
+    maxAge: 0,
+    path: '/',
+    httpOnly: true,
+    sameSite: 'Lax',
+    secure: isHttpsRequest(req),
+  });
+}
+
+function createSession(auth, user, rememberDevice, req, deviceName = '') {
+  const token = randomToken();
+  const now = new Date();
+  const maxAgeSeconds = rememberDevice ? REMEMBER_DEVICE_SESSION_SECONDS : STANDARD_SESSION_SECONDS;
+  const expiresAt = new Date(now.getTime() + maxAgeSeconds * 1000).toISOString();
+  const session = {
+    id: auth.nextSessionId++,
+    userId: user.id,
+    tokenHash: hashSessionToken(token),
+    rememberDevice: Boolean(rememberDevice),
+    deviceName: String(deviceName || '').trim().slice(0, 120),
+    userAgent: String(req.headers['user-agent'] || '').slice(0, 260),
+    ipAddress: String(req.socket.remoteAddress || '').slice(0, 80),
+    createdAt: now.toISOString(),
+    lastSeenAt: now.toISOString(),
+    expiresAt,
+    revokedAt: '',
+  };
+  auth.sessions.push(session);
+  return { token, session, maxAgeSeconds };
+}
+
+function getAuthContext(req) {
+  const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+  if (!token) return null;
+
+  const auth = readAuth();
+  const now = Date.now();
+  let changed = false;
+  auth.sessions = auth.sessions.filter((session) => {
+    const keep = !session.revokedAt && (!session.expiresAt || Date.parse(session.expiresAt) > now);
+    if (!keep) changed = true;
+    return keep;
+  });
+
+  const tokenHash = hashSessionToken(token);
+  const session = auth.sessions.find((item) => item.tokenHash === tokenHash);
+  const user = session ? auth.users.find((item) => item.id === session.userId) : null;
+
+  if (!session || !user) {
+    if (changed) writeAuth(auth);
+    return null;
+  }
+
+  if (Date.parse(session.lastSeenAt || 0) + 60 * 1000 < now) {
+    session.lastSeenAt = new Date(now).toISOString();
+    changed = true;
+  }
+  if (changed) writeAuth(auth);
+  return { auth, session, user };
+}
+
+function requireAuth(req, res) {
+  const context = getAuthContext(req);
+  if (!context) {
+    sendJson(res, 401, { error: 'Nicht angemeldet' });
+    return null;
+  }
+  return context;
+}
+
+function safeNextPath(value) {
+  const next = String(value || '').trim();
+  if (normalizeAppPath(next) === '/login') return '/dashboard';
+  if (next.startsWith('/') && !next.startsWith('//')) return next;
+  return '/dashboard';
+}
+
+function userOwnsPlant(plant, user) {
+  return normalizeNumericId(plant?.ownerUserId) === user.id;
+}
+
+function userOwnsPlan(plan, user) {
+  return normalizeNumericId(plan?.ownerUserId) === user.id;
+}
+
+function plantIdsForUser(state, user) {
+  return new Set((state.plants || []).filter((plant) => userOwnsPlant(plant, user)).map((plant) => plant.id));
+}
+
+function locationsForUser(state, user, plants) {
+  const userLocations = state.locationsByUserId && typeof state.locationsByUserId === 'object'
+    ? state.locationsByUserId[String(user.id)] || []
+    : [];
+  return normalizeLocationList([
+    ...userLocations,
+    ...(plants || []).map((plant) => plant.initialLocation),
+    ...(plants || []).map((plant) => plant.location),
+    ...(plants || []).flatMap((plant) => (Array.isArray(plant.events) ? plant.events : []).map((event) => event.location)),
+  ]);
+}
+
+function stateForUser(user, sourceState = readState()) {
+  const { locationsByUserId, ...publicState } = sourceState;
+  const plants = (sourceState.plants || []).filter((plant) => userOwnsPlant(plant, user));
+  const carePlans = Array.isArray(sourceState.carePlans)
+    ? sourceState.carePlans.filter((plan) => userOwnsPlan(plan, user))
+    : [];
+
+  return {
+    ...publicState,
+    plants,
+    carePlans,
+    locations: locationsForUser(sourceState, user, plants),
+  };
+}
+
+function writeStateForUser(nextState, user) {
+  const currentState = readState();
+  const normalizedIncoming = normalizeState(nextState || {}).state;
+  const incomingPlants = (normalizedIncoming.plants || []).map((plant) => ({
+    ...plant,
+    ownerUserId: user.id,
+  }));
+  const incomingPlans = Array.isArray(normalizedIncoming.carePlans)
+    ? normalizedIncoming.carePlans.map((plan) => ({ ...plan, ownerUserId: user.id }))
+    : [];
+
+  const locationsByUserId = {
+    ...(currentState.locationsByUserId && typeof currentState.locationsByUserId === 'object' ? currentState.locationsByUserId : {}),
+    [String(user.id)]: normalizeLocationList([
+      ...(Array.isArray(normalizedIncoming.locations) ? normalizedIncoming.locations : []),
+      ...incomingPlants.map((plant) => plant.initialLocation),
+      ...incomingPlants.map((plant) => plant.location),
+      ...incomingPlants.flatMap((plant) => (Array.isArray(plant.events) ? plant.events : []).map((event) => event.location)),
+    ]),
+  };
+
+  const plants = [
+    ...(currentState.plants || []).filter((plant) => !userOwnsPlant(plant, user)),
+    ...incomingPlants,
+  ];
+  const carePlans = [
+    ...(Array.isArray(currentState.carePlans) ? currentState.carePlans.filter((plan) => !userOwnsPlan(plan, user)) : []),
+    ...incomingPlans,
+  ];
+  const mergedState = {
+    ...currentState,
+    ...normalizedIncoming,
+    plants,
+    carePlans,
+    locationsByUserId,
+    locations: normalizeLocationList([
+      ...Object.values(locationsByUserId).flat(),
+      ...plants.map((plant) => plant.initialLocation),
+      ...plants.map((plant) => plant.location),
+      ...plants.flatMap((plant) => (Array.isArray(plant.events) ? plant.events : []).map((event) => event.location)),
+    ]),
+  };
+
+  return stateForUser(user, writeState(mergedState));
+}
+
+function claimUnownedDataForUser(userId) {
+  const user = { id: normalizeNumericId(userId) };
+  if (!user.id) return;
+
+  const state = readState();
+  let stateChanged = false;
+  (state.plants || []).forEach((plant) => {
+    if (!normalizeNumericId(plant.ownerUserId)) {
+      plant.ownerUserId = user.id;
+      stateChanged = true;
+    }
+  });
+  if (Array.isArray(state.carePlans)) {
+    state.carePlans.forEach((plan) => {
+      if (!normalizeNumericId(plan.ownerUserId)) {
+        plan.ownerUserId = user.id;
+        stateChanged = true;
+      }
+    });
+  }
+  const locationsByUserId = state.locationsByUserId && typeof state.locationsByUserId === 'object'
+    ? state.locationsByUserId
+    : {};
+  if (!locationsByUserId[String(user.id)]?.length && Array.isArray(state.locations) && state.locations.length) {
+    locationsByUserId[String(user.id)] = state.locations;
+    state.locationsByUserId = locationsByUserId;
+    stateChanged = true;
+  }
+  if (stateChanged) writeState(state);
+
+  const ownedPlantIds = plantIdsForUser(state, user);
+  const photos = readJson(PHOTOS_FILE, []);
+  let photosChanged = false;
+  const nextPhotos = photos.map((photo) => {
+    if (!normalizeNumericId(photo.ownerUserId) && ownedPlantIds.has(photo.plantId)) {
+      photosChanged = true;
+      return { ...photo, ownerUserId: user.id };
+    }
+    return photo;
+  });
+  if (photosChanged) writeJson(PHOTOS_FILE, nextPhotos);
+}
+
+function photoBelongsToUser(photo, user, state = readState()) {
+  if (!photo) return false;
+  if (normalizeNumericId(photo.ownerUserId) === user.id) return true;
+  return !normalizeNumericId(photo.ownerUserId) && plantIdsForUser(state, user).has(photo.plantId);
+}
+
+function findPlantForUserById(plantId, user) {
+  return readState().plants.find((plant) => plant.id === plantId && userOwnsPlant(plant, user));
+}
+
+function findPlantForUserByShortCode(shortCode, user) {
+  const code = String(shortCode || '').toLowerCase();
+  return readState().plants.find((plant) =>
+    userOwnsPlant(plant, user) && String(plant.shortCode || '').toLowerCase() === code
+  );
 }
 
 function isValidShortCode(value) {
@@ -468,7 +868,7 @@ function renderAppPage(pageKey) {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${escapeHtml(page.title)} · Plant Monitor</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="/styles.css?v=13" />
+    <link rel="stylesheet" href="/styles.css?v=14" />
   </head>
   <body data-view="${escapeHtml(pageKey)}">
     <div class="app-shell">
@@ -489,6 +889,12 @@ ${renderAppNav(pageKey)}
           <span class="panel-label">Prototyp</span>
           <p>Alle Einträge werden auf dem Laptop-Server gespeichert.</p>
           <div class="storage-status" id="storageStatus">Speicher wird geprüft...</div>
+        </div>
+
+        <div class="sidebar-panel account-panel">
+          <span class="panel-label">Konto</span>
+          <p id="currentUserLabel">Angemeldet</p>
+          <button class="secondary-action small-action account-logout" id="logoutButton" type="button">Abmelden</button>
         </div>
       </aside>
 
@@ -513,9 +919,35 @@ ${viewHtml}
 ${dialogsHtml}
 
     <script src="/data.js?v=7"></script>
-    <script src="/app.js?v=13"></script>
+    <script src="/app.js?v=14"></script>
   </body>
 </html>`;
+}
+
+function renderLoginPage(nextPath = '/dashboard') {
+  const loginHtml = readProjectText(path.join('pages', 'login.html'));
+  return `<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Anmelden · Plant Monitor</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/styles.css?v=14" />
+  </head>
+  <body class="auth-page" data-next="${escapeHtml(safeNextPath(nextPath))}">
+${loginHtml}
+    <script src="/auth.js?v=1"></script>
+  </body>
+</html>`;
+}
+
+function redirect(res, location) {
+  res.writeHead(302, {
+    Location: location,
+    'Cache-Control': 'no-store',
+  });
+  res.end();
 }
 
 function getStaticCacheControl(filePath) {
@@ -554,20 +986,21 @@ function readRequestBody(req) {
   });
 }
 
-function send(res, statusCode, content, contentType = 'text/plain; charset=utf-8') {
+function send(res, statusCode, content, contentType = 'text/plain; charset=utf-8', extraHeaders = {}) {
   res.writeHead(statusCode, {
     'Content-Type': contentType,
     'Cache-Control': 'no-store',
+    ...extraHeaders,
   });
   res.end(content);
 }
 
-function sendJson(res, statusCode, value) {
-  send(res, statusCode, JSON.stringify(value), 'application/json; charset=utf-8');
+function sendJson(res, statusCode, value, extraHeaders = {}) {
+  send(res, statusCode, JSON.stringify(value), 'application/json; charset=utf-8', extraHeaders);
 }
 
-function sendHtml(res, statusCode, html) {
-  send(res, statusCode, html, 'text/html; charset=utf-8');
+function sendHtml(res, statusCode, html, extraHeaders = {}) {
+  send(res, statusCode, html, 'text/html; charset=utf-8', extraHeaders);
 }
 
 function safeResolve(requestPath) {
@@ -763,14 +1196,120 @@ function reedSolomonRemainder(data, divisor) {
 // HTTP-API
 // ---------------------------------------------------------------------------
 
+async function handleAuthApi(req, res, url) {
+  if (req.method === 'GET' && url.pathname === '/api/auth/me') {
+    const context = getAuthContext(req);
+    if (!context) return sendJson(res, 401, { error: 'Nicht angemeldet' });
+    return sendJson(res, 200, { user: publicUser(context.user), session: { rememberDevice: context.session.rememberDevice } });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/auth/register') {
+    const body = await readRequestBody(req) || {};
+    const username = normalizeUsername(body.username);
+    const email = normalizeEmail(body.email);
+    const password = String(body.password || '');
+
+    if (!USERNAME_PATTERN.test(username)) {
+      return sendJson(res, 400, { error: 'Benutzername: 3-32 Zeichen, erlaubt sind Buchstaben, Zahlen, Punkt, Unterstrich und Bindestrich.' });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return sendJson(res, 400, { error: 'Bitte hinterlege eine gültige E-Mail-Adresse.' });
+    }
+    if (password.length < PASSWORD_MIN_LENGTH) {
+      return sendJson(res, 400, { error: `Das Passwort braucht mindestens ${PASSWORD_MIN_LENGTH} Zeichen.` });
+    }
+
+    const auth = readAuth();
+    if (auth.users.some((user) => usernameKey(user.username) === usernameKey(username))) {
+      return sendJson(res, 409, { error: 'Dieser Benutzername ist schon vergeben.' });
+    }
+    if (auth.users.some((user) => normalizeEmail(user.email) === email)) {
+      return sendJson(res, 409, { error: 'Diese E-Mail-Adresse ist schon hinterlegt.' });
+    }
+
+    const now = new Date().toISOString();
+    const isFirstUser = auth.users.length === 0;
+    const user = {
+      id: auth.nextUserId++,
+      username,
+      email,
+      passwordHash: hashPassword(password),
+      createdAt: now,
+      lastLoginAt: now,
+    };
+    auth.users.push(user);
+    const sessionInfo = createSession(auth, user, Boolean(body.rememberDevice), req, body.deviceName);
+    writeAuth(auth);
+    if (isFirstUser) claimUnownedDataForUser(user.id);
+
+    return sendJson(res, 201, { user: publicUser(user) }, {
+      'Set-Cookie': sessionCookie(sessionInfo.token, sessionInfo.maxAgeSeconds, req),
+    });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/auth/login') {
+    const body = await readRequestBody(req) || {};
+    const username = normalizeUsername(body.username);
+    const password = String(body.password || '');
+    const auth = readAuth();
+    const user = auth.users.find((item) => usernameKey(item.username) === usernameKey(username));
+
+    if (!user || !verifyPassword(password, user.passwordHash)) {
+      return sendJson(res, 401, { error: 'Benutzername oder Passwort stimmt nicht.' });
+    }
+
+    user.lastLoginAt = new Date().toISOString();
+    const sessionInfo = createSession(auth, user, Boolean(body.rememberDevice), req, body.deviceName);
+    writeAuth(auth);
+
+    return sendJson(res, 200, { user: publicUser(user) }, {
+      'Set-Cookie': sessionCookie(sessionInfo.token, sessionInfo.maxAgeSeconds, req),
+    });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/auth/logout') {
+    const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+    if (token) {
+      const auth = readAuth();
+      const tokenHash = hashSessionToken(token);
+      const session = auth.sessions.find((item) => item.tokenHash === tokenHash && !item.revokedAt);
+      if (session) {
+        session.revokedAt = new Date().toISOString();
+        writeAuth(auth);
+      }
+    }
+    return sendJson(res, 200, { ok: true }, {
+      'Set-Cookie': clearSessionCookie(req),
+    });
+  }
+
+  return null;
+}
+
 async function handleApi(req, res, url) {
+  if (url.pathname.startsWith('/api/auth/')) {
+    const handled = await handleAuthApi(req, res, url);
+    if (handled === null) return send(res, 404, 'API nicht gefunden');
+    return handled;
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/public-url') {
+    return sendJson(res, 200, { url: getPublicBaseUrl(), host: PUBLIC_HOST, port: PORT });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/health') {
+    return sendJson(res, 200, { ok: true, storage: 'server', dataDir: DATA_DIR, dataPathFile: DATA_PATH_FILE, libraryFile: LIBRARY_FILE });
+  }
+
+  const context = requireAuth(req, res);
+  if (!context) return;
+  const { user } = context;
 
   // QR-SVG fuer einzelne Pflanzen: Ziel ist immer die kurze oeffentliche URL.
   const plantQrMatch = url.pathname.match(/^\/api\/plant-qr\/([^/]+)\.svg$/);
   if (req.method === 'GET' && plantQrMatch) {
     const plantId = decodeURIComponent(plantQrMatch[1]);
-    const state = readState();
-    const plant = state.plants.find((item) => item.id === plantId);
+    const plant = findPlantForUserById(plantId, user);
     if (!plant) {
       return send(res, 404, 'Pflanze nicht gefunden');
     }
@@ -785,13 +1324,6 @@ async function handleApi(req, res, url) {
       return send(res, 500, error.message || 'QR-Code konnte nicht erzeugt werden');
     }
   }
-  if (req.method === 'GET' && url.pathname === '/api/public-url') {
-    return sendJson(res, 200, { url: getPublicBaseUrl(), host: PUBLIC_HOST, port: PORT });
-  }
-
-  if (req.method === 'GET' && url.pathname === '/api/health') {
-    return sendJson(res, 200, { ok: true, storage: 'server', dataDir: DATA_DIR, dataPathFile: DATA_PATH_FILE, libraryFile: LIBRARY_FILE });
-  }
 
   // library.json: eigene Sorten, Filter fuer "Pflanze anlegen" und Shoplinks.
   if (req.method === 'GET' && url.pathname === '/api/library') {
@@ -805,7 +1337,7 @@ async function handleApi(req, res, url) {
 
   // state.json: kompletter Pflanzenstand inklusive Pflegeplaenen und Ereignissen.
   if (req.method === 'GET' && url.pathname === '/api/state') {
-    return sendJson(res, 200, readState());
+    return sendJson(res, 200, stateForUser(user));
   }
 
   if (req.method === 'PUT' && url.pathname === '/api/state') {
@@ -813,15 +1345,21 @@ async function handleApi(req, res, url) {
     if (!nextState || !Array.isArray(nextState.plants)) {
       return send(res, 400, 'Ungültiger Pflanzenstand');
     }
-    return sendJson(res, 200, writeState(nextState));
+    return sendJson(res, 200, writeStateForUser(nextState, user));
   }
 
   // photos.json: separat gehalten, weil Foto-dataUrls deutlich groesser sind.
   if (req.method === 'GET' && url.pathname === '/api/photos') {
     const plantId = url.searchParams.get('plantId');
     const mode = url.searchParams.get('mode');
+    const state = readState();
+    if (plantId && !plantIdsForUser(state, user).has(plantId)) {
+      return send(res, 404, 'Pflanze nicht gefunden');
+    }
     const photos = readJson(PHOTOS_FILE, []);
-    const filtered = plantId ? photos.filter(photo => photo.plantId === plantId) : photos;
+    const filtered = photos.filter((photo) =>
+      photoBelongsToUser(photo, user, state) && (!plantId || photo.plantId === plantId)
+    );
     const payload = mode === 'summary' ? filtered.map(summarizePhoto) : filtered;
     return sendJson(res, 200, payload);
   }
@@ -831,25 +1369,33 @@ async function handleApi(req, res, url) {
     if (!photo || !photo.id || !photo.plantId || !photo.dataUrl) {
       return send(res, 400, 'Ungültiges Foto');
     }
+    const state = readState();
+    if (!plantIdsForUser(state, user).has(photo.plantId)) {
+      return send(res, 404, 'Pflanze nicht gefunden');
+    }
     const photos = readJson(PHOTOS_FILE, []);
-    const nextPhotos = photos.filter(item => item.id !== photo.id);
-    nextPhotos.push(photo);
+    const nextPhotos = photos.filter((item) => item.id !== photo.id || !photoBelongsToUser(item, user, state));
+    nextPhotos.push({ ...photo, ownerUserId: user.id });
     writeJson(PHOTOS_FILE, nextPhotos);
-    return sendJson(res, 201, photo);
+    return sendJson(res, 201, { ...photo, ownerUserId: user.id });
   }
 
   const photoDeleteMatch = url.pathname.match(/^\/api\/photos\/([^/]+)$/);
   if (req.method === 'GET' && photoDeleteMatch) {
     const photoId = decodeURIComponent(photoDeleteMatch[1]);
+    const state = readState();
     const photos = readJson(PHOTOS_FILE, []);
     const photo = photos.find(item => item.id === photoId);
-    if (!photo) return send(res, 404, 'Foto nicht gefunden');
+    if (!photo || !photoBelongsToUser(photo, user, state)) return send(res, 404, 'Foto nicht gefunden');
     return sendJson(res, 200, photo);
   }
 
   if (req.method === 'DELETE' && photoDeleteMatch) {
     const photoId = decodeURIComponent(photoDeleteMatch[1]);
+    const state = readState();
     const photos = readJson(PHOTOS_FILE, []);
+    const targetPhoto = photos.find((photo) => photo.id === photoId);
+    if (!targetPhoto || !photoBelongsToUser(targetPhoto, user, state)) return send(res, 404, 'Foto nicht gefunden');
     const nextPhotos = photos.filter(photo => photo.id !== photoId);
     writeJson(PHOTOS_FILE, nextPhotos);
     return sendJson(res, 200, { ok: true });
@@ -897,23 +1443,40 @@ function serveStatic(req, res) {
 const server = http.createServer((req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
 
+  if ((req.method === 'GET' || req.method === 'HEAD') && normalizeAppPath(url.pathname) === '/login') {
+    const context = getAuthContext(req);
+    if (context) {
+      return redirect(res, safeNextPath(url.searchParams.get('next')) || '/dashboard');
+    }
+    const html = renderLoginPage(url.searchParams.get('next') || '/dashboard');
+    if (req.method === 'HEAD') {
+      return send(res, 200, '', 'text/html; charset=utf-8');
+    }
+    return sendHtml(res, 200, html);
+  }
+
   // Kurzlinks fuer Pflanzenetiketten. Der Browser landet danach in der normalen
   // App-Route mit ?plant=<id>, damit app.js die Auswahl uebernehmen kann.
   const shortPlantMatch = url.pathname.match(/^\/p\/([a-z0-9]{1,12})$/i);
   if ((req.method === 'GET' || req.method === 'HEAD') && shortPlantMatch) {
-    const plant = findPlantByShortCode(shortPlantMatch[1]);
+    const context = getAuthContext(req);
+    if (!context) {
+      return redirect(res, `/login?next=${encodeURIComponent(url.pathname)}`);
+    }
+    const plant = findPlantForUserByShortCode(shortPlantMatch[1], context.user);
     if (!plant) {
       return send(res, 404, 'Pflanze nicht gefunden');
     }
-    res.writeHead(302, {
-      Location: `/dashboard?plant=${encodeURIComponent(plant.id)}`,
-      'Cache-Control': 'no-store',
-    });
-    return res.end();
+    return redirect(res, `/dashboard?plant=${encodeURIComponent(plant.id)}`);
   }
 
   const pageKey = appPageKeyFromPath(url.pathname);
   if ((req.method === 'GET' || req.method === 'HEAD') && pageKey) {
+    const context = getAuthContext(req);
+    if (!context) {
+      const next = `${url.pathname}${url.search || ''}`;
+      return redirect(res, `/login?next=${encodeURIComponent(next)}`);
+    }
     const html = renderAppPage(pageKey);
     if (req.method === 'HEAD') {
       return send(res, 200, '', 'text/html; charset=utf-8');
